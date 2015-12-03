@@ -5,10 +5,6 @@
 
 cmake_minimum_required(VERSION 2.8)
 
-if(FREEGLUT_FOUND)
-  subdirs(pcview)
-endif()
-
 set(PDAL_SOURCE_DIR ../src)
 
 #------------------------------------------------------------------------------
@@ -17,7 +13,19 @@ set(PDAL_SOURCE_DIR ../src)
 
 include_directories(
     .
-    ../include)
+    ../include
+    ../util
+    ${PROJECT_SOURCE_DIR}/io/faux
+    ${PROJECT_SOURCE_DIR}/io/las
+    ${PROJECT_SOURCE_DIR}/kernels
+    ${PROJECT_SOURCE_DIR}/kernels/delta
+    ${PROJECT_SOURCE_DIR}/kernels/diff
+    ${PROJECT_SOURCE_DIR}/kernels/info
+    ${PROJECT_SOURCE_DIR}/kernels/pipeline
+    ${PROJECT_SOURCE_DIR}/kernels/random
+    ${PROJECT_SOURCE_DIR}/kernels/sort
+    ${PROJECT_SOURCE_DIR}/kernels/translate
+)
 
 #------------------------------------------------------------------------------
 # Collect programs to build
@@ -25,73 +33,78 @@ include_directories(
 
 set(PDAL_UTILITY pdal)
 
-
 #------------------------------------------------------------------------------
 # Configure build targets
 #------------------------------------------------------------------------------
 
-if(WIN32)
-    add_definitions("-DPDAL_DLL_EXPORT=1")
-endif()
-
 link_directories(${Boost_LIBRARY_DIRS})
 
 if(PDAL_UTILITY)
+    set(srcs pdal.cpp)
+
+    if(WIN32)
+        list(APPEND srcs ${PDAL_TARGET_OBJECTS})
+    endif()
+
     list(APPEND PDAL_UTILITIES ${PDAL_UTILITY})
-    add_executable(${PDAL_UTILITY} pdal.cpp)
-    target_link_libraries(${PDAL_UTILITY} ${PDAL_LIB_NAME})
+    if (APPLE AND PDAL_BUNDLE)
+        add_executable(${PDAL_UTILITY} MACOSX_BUNDLE ${srcs})
+    else (APPLE AND PDAL_BUNDLE)
+        add_executable(${PDAL_UTILITY} ${srcs})
+    endif(APPLE AND PDAL_BUNDLE)
+    target_link_libraries(${PDAL_UTILITY} ${PDAL_BASE_LIB_NAME})
 endif()
 
 #------------------------------------------------------------------------------
 # Targets installation
 #------------------------------------------------------------------------------
 
-install(TARGETS ${PDAL_UTILITIES}
-    RUNTIME DESTINATION ${PDAL_BIN_DIR}
-    LIBRARY DESTINATION ${PDAL_LIB_DIR}
-    ARCHIVE DESTINATION ${PDAL_LIB_DIR})
+if (APPLE AND PDAL_BUNDLE)
+    install(TARGETS ${PDAL_UTILITIES}
+        BUNDLE DESTINATION ${PDAL_BIN_INSTALL_DIR})
+else(APPLE AND PDAL_BUNDLE)
+    install(TARGETS ${PDAL_UTILITIES}
+        RUNTIME DESTINATION ${PDAL_BIN_INSTALL_DIR})
+endif(APPLE AND PDAL_BUNDLE)
 
-if(UNIX)
+if(UNIX OR APPLE)
 
-  if(WITH_PKGCONFIG)
-    
-    set(PKGCFG_PREFIX "${CMAKE_INSTALL_PREFIX}")
-    set(PKGCFG_INC_DIR "${PDAL_INCLUDE_SUBDIR}")
-    set(PKGCFG_LIB_DIR "${PDAL_LIB_SUBDIR}")
-    set(PKGCFG_REQUIRES  "")
-    set(PKGCFG_VERSION ${VERSION})
-    set(PKGCFG_LINK_FLAGS "-lpdal")
-    set(PKGCFG_COMPILE_FLAGS "")
+    set(PKGCONFIG_LIBRARY_DEFINITIONS "")
+    set(PDAL_INCLUDE_DEFINITIONS "-I${CMAKE_INSTALL_PREFIX}/include -I${Boost_INCLUDE_DIR} -I${GDAL_INCLUDE_DIR}")
+    set(PKGCONFIG_LIBRARY_DEFINITIONS "${PKGCONFIG_LIBRARY_DEFINITIONS} gdal")
+
     if(LIBXML2_FOUND)
-      set(PKGCFG_REQUIRES "${PKGCFG_REQUIRES} libxml-2.0")
+        set(PKGCONFIG_LIBRARY_DEFINITIONS "${PKGCONFIG_LIBRARY_DEFINITIONS} libxml-2.0")
+        set(PDAL_INCLUDE_DEFINITIONS "${PDAL_INCLUDE_DEFINITIONS} -I${LIBXML2_INCLUDE_DIR}")
     endif()
-    if(GEOTIFF_FOUND)
-      set(PKGCFG_REQUIRES "${PKGCFG_REQUIRES} geotiff")
+
+    if (GEOS_FOUND)
+        set(PKGCONFIG_LIBRARY_DEFINITIONS "${PKGCONFIG_LIBRARY_DEFINITIONS} geos")
+        set(PDAL_INCLUDE_DEFINITIONS "${PDAL_INCLUDE_DEFINITIONS} -I${GEOS_INCLUDE_DIR}")
     endif()
-    
-  else()
+
+    if (LASZIP_FOUND)
+        set(PDAL_INCLUDE_DEFINITIONS "${PDAL_INCLUDE_DEFINITIONS} -I${LASZIP_INCLUDE_DIR}")
+    endif()
+
+    file(MAKE_DIRECTORY "${PDAL_OUTPUT_LIB_DIR}/pkgconfig/")
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/pdal.pc.in
+                   ${CMAKE_CURRENT_BINARY_DIR}/pdal.pc @ONLY)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pdal.pc
+        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/"
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+
 
     # Autoconf compatibility variables to use the same script source.
-    set(prefix ${CMAKE_INSTALL_PREFIX})
-    set(exec_prefix ${CMAKE_INSTALL_PREFIX}/bin)
-    set(libdir ${CMAKE_INSTALL_PREFIX}/lib)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/pdal-config.in"
+                   "${CMAKE_CURRENT_SOURCE_DIR}/pdal-config" @ONLY)
 
-    get_directory_property(PDAL_DEFINITIONS DIRECTORY ${PDAL_SOURCE_DIR}/ COMPILE_DEFINITIONS)   
+    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/pdal-config"
+         DESTINATION "${PDAL_OUTPUT_BIN_DIR}/"
+         FILE_PERMISSIONS  OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 
-    set(PDAL_CONFIG_DEFINITIONS "")
-    foreach(definition ${PDAL_DEFINITIONS})
-        set(PDAL_CONFIG_DEFINITIONS "${PDAL_CONFIG_DEFINITIONS} -D${definition}")
-    endforeach()
-
-     
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/pdal-config.in
-      ${CMAKE_CURRENT_BINARY_DIR}/pdal-config @ONLY)
-      
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pdal-config
-      DESTINATION bin/
-      PERMISSIONS
-      OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
-
-  endif()
-
+    install(PROGRAMS "${PDAL_OUTPUT_BIN_DIR}/pdal-config"
+            DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
+            PERMISSIONS
+            OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 endif()

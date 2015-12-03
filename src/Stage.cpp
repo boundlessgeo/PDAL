@@ -32,42 +32,144 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
+#include <pdal/GlobalEnvironment.hpp>
 #include <pdal/Stage.hpp>
 #include <pdal/SpatialReference.hpp>
+#include <pdal/UserCallback.hpp>
 
-#include <boost/concept_check.hpp> // ignore_unused_variable_warning
-#include <boost/foreach.hpp>
+#include "StageRunner.hpp"
+
+#include <memory>
 
 namespace pdal
 {
 
 
-Stage::Stage(const std::vector<StageBase*>& prevs, const Options& options)
-    : StageBase(prevs, options)
-    , m_numPoints(0)
-    , m_pointCountType(PointCount_Fixed)
+Stage::Stage()
+  : m_callback(new UserCallback), m_progressFd(-1)
 {
-    return;
+    Construct();
 }
 
 
-Stage::~Stage()
+/// Only add options if an option with the same name doesn't already exist.
+///
+/// \param[in] ops  Options to add.
+///
+void Stage::addConditionalOptions(const Options& opts)
 {
-    return;
+    for (const auto& o : opts.getOptions())
+        if (!m_options.hasOption(o.getName()))
+            m_options.add(o);
 }
 
 
-void Stage::initialize()
+void Stage::Construct()
 {
-    StageBase::initialize();
+    m_debug = false;
+    m_verbose = 0;
+}
 
-    // Try to fetch overridden options here
+
+void Stage::prepare(PointTableRef table)
+{
+    for (size_t i = 0; i < m_inputs.size(); ++i)
+    {
+        Stage *prev = m_inputs[i];
+        prev->prepare(table);
+    }
+    l_processOptions(m_options);
+    processOptions(m_options);
+    l_initialize(table);
+    initialize();
+    addDimensions(table.layout());
+    prepared(table);
+}
+
+
+PointViewSet Stage::execute(PointTableRef table)
+{
+    table.layout()->finalize();
+
+    PointViewSet views;
+    if (m_inputs.empty())
+    {
+        views.insert(PointViewPtr(new PointView(table)));
+    }
+    else
+    {
+        for (size_t i = 0; i < m_inputs.size(); ++i)
+        {
+            Stage *prev = m_inputs[i];
+            PointViewSet temp = prev->execute(table);
+            views.insert(temp.begin(), temp.end());
+        }
+    }
+
+    PointViewSet outViews;
+    std::vector<StageRunnerPtr> runners;
+
+    ready(table);
+    for (auto const& it : views)
+    {
+        StageRunnerPtr runner(new StageRunner(this, it));
+        runners.push_back(runner);
+        runner->run();
+    }
+    for (auto const& it : runners)
+    {
+        StageRunnerPtr runner(it);
+        PointViewSet temp = runner->wait();
+        outViews.insert(temp.begin(), temp.end());
+    }
+    l_done(table);
+    done(table);
+    return outViews;
+}
+
+
+void Stage::l_initialize(PointTableRef table)
+{
+    m_metadata = table.metadata().add(getName());
+}
+
+
+void Stage::l_processOptions(const Options& options)
+{
+    m_debug = options.getValueOrDefault<bool>("debug", false);
+    m_verbose = options.getValueOrDefault<uint32_t>("verbose", 0);
+    if (m_debug && !m_verbose)
+        m_verbose = 1;
+    if (m_debug && !m_verbose)
+        m_verbose = 1;
+
+    if (m_inputs.empty())
+    {
+        std::string logname =
+            options.getValueOrDefault<std::string>("log", "stdlog");
+        m_log = std::shared_ptr<pdal::Log>(new Log(getName(), logname));
+    }
+    else
+    {
+        if (options.hasOption("log"))
+        {
+            std::string logname = options.getValueOrThrow<std::string>("log");
+            m_log.reset(new Log(getName(), logname));
+        }
+        else
+        {
+            // We know we're not empty at this point
+            std::ostream* v = m_inputs[0]->log()->getLogStream();
+            m_log.reset(new Log(getName(), v));
+        }
+    }
+    m_log->setLevel((LogLevel::Enum)m_verbose);
 
     // If the user gave us an SRS via options, take that.
     try
     {
-        m_spatialReference = getOptions().getValueOrThrow<pdal::SpatialReference>("spatialreference");
-
+        m_spatialReference = options.
+            getValueOrThrow<pdal::SpatialReference>("spatialreference");
     }
     catch (pdal_error const&)
     {
@@ -75,79 +177,18 @@ void Stage::initialize()
         // point.  Maybe another stage might forward/set it later.
     }
 
-    return;
+    // Process reader-specific options.
+    readerProcessOptions(options);
+    // Process writer-specific options.
+    writerProcessOptions(options);
 }
 
 
-const Bounds<double>& Stage::getBounds() const
+void Stage::l_done(PointTableRef table)
 {
-    return m_bounds;
+    if (!m_spatialReference.empty())
+        table.setSpatialRef(m_spatialReference);
 }
-
-
-void Stage::setBounds(const Bounds<double>& bounds)
-{
-    m_bounds = bounds;
-}
-
-Schema& Stage::getSchemaRef()
-{
-    return m_schema;
-}
-
-
-void Stage::setSchema(const Schema& schema)
-{
-    m_schema = schema;
-}
-
-
-boost::uint64_t Stage::getNumPoints() const
-{
-    // The Stage's getNumPoints() can't change. If it is 0, we'll try to
-    // forward the getPrevStage()'s count. This will continue down the
-    // pipeline until a count is returned. If the end stage does
-    // actually return a 0 because the Stage has an unknown or indefinite
-    // point count, this will ask and return 0 every time.
-
-    // We will cache this value on the stage once we've returned
-    // it because the point count of a stage is not expected to change.
-    // m_numPoints is mutable to support the setting of its value
-    // to cache the previous stage's value.
-    if (m_numPoints == 0)
-    {
-        try
-        {
-            m_numPoints = getPrevStage().getNumPoints();
-            return m_numPoints;
-        }
-        catch (pdal::internal_error const&)
-        {
-            return m_numPoints;
-        }
-
-    }
-    return m_numPoints;
-}
-
-
-void Stage::setNumPoints(boost::uint64_t numPoints)
-{
-    m_numPoints = numPoints;
-}
-
-
-PointCountType Stage::getPointCountType() const
-{
-    return m_pointCountType;
-}
-
-
-void Stage::setPointCountType(PointCountType pointCountType)
-{
-    m_pointCountType = pointCountType;
-}
-
 
 const SpatialReference& Stage::getSpatialReference() const
 {
@@ -155,51 +196,59 @@ const SpatialReference& Stage::getSpatialReference() const
 }
 
 
-void Stage::setSpatialReference(const SpatialReference& spatialReference)
+void Stage::setSpatialReference(const SpatialReference& spatialRef)
 {
-    m_spatialReference = spatialReference;
-
-
-    boost::optional<SpatialReference> ref = m_metadata.getValueOptional<SpatialReference>("spatialreference");
-    if (!ref)
-    {
-        m_metadata.deleteMetadata("spatialreference");
-        m_metadata.addMetadata<pdal::SpatialReference>("spatialreference",
-                spatialReference,
-                "SRS of this stage");
-
-    }
-
+    setSpatialReference(m_metadata, spatialRef);
 }
 
-void Stage::setCoreProperties(const Stage& stage)
+void Stage::setSpatialReference(MetadataNode& m,
+    const SpatialReference& spatialRef)
 {
-    this->setSchema(stage.getSchema());
-    this->setNumPoints(stage.getNumPoints());
-    this->setPointCountType(stage.getPointCountType());
-    this->setBounds(stage.getBounds());
-    this->setSpatialReference(stage.getSpatialReference());
+    m_spatialReference = spatialRef;
 
-    return;
+    auto pred = [](MetadataNode m){ return m.name() == "spatialreference"; };
+
+    MetadataNode spatialNode = m.findChild(pred);
+    if (spatialNode.empty())
+    {
+        m.add("spatialreference",
+           spatialRef.getWKT(SpatialReference::eHorizontalOnly, false),
+           "SRS of this stage");
+        m.add("comp_spatialreference",
+            spatialRef.getWKT(SpatialReference::eCompoundOK, false),
+            "SRS of this stage");
+    }
+}
+
+std::vector<Stage *> Stage::findStage(std::string name)
+{
+    std::vector<Stage *> output;
+
+    if (boost::iequals(getName(), name))
+        output.push_back(this);
+
+    for (auto const& stage : m_inputs)
+    {
+        if (boost::iequals(stage->getName(), name))
+            output.push_back(stage);
+        if (stage->getInputs().size())
+        {
+            auto hits = stage->findStage(name);
+            if (hits.size())
+                output.insert(output.end(), hits.begin(), hits.end());
+        }
+    }
+
+    return output;
 }
 
 std::ostream& operator<<(std::ostream& ostr, const Stage& stage)
 {
     ostr << "  Name: " << stage.getName() << std::endl;
-    ostr << "  Num points: " << stage.getNumPoints() << std::endl;
-
-    ostr << "  Bounds:" << std::endl;
-    ostr << "    " << stage.getBounds() << std::endl;
-
-    ostr << "  Schema: " << std::endl;
-    ostr << "    Num dims: " << stage.getSchema().getDimensions().size() << std::endl;
-//    ostr << "    Size in bytes: " << header.getSchema().getByteSize() << std::endl;
-
     ostr << "  Spatial Reference:" << std::endl;
     ostr << "    WKT: " << stage.getSpatialReference().getWKT() << std::endl;
 
     return ostr;
 }
-
 
 } // namespace pdal

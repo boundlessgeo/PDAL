@@ -32,16 +32,14 @@
  * OF SUCH DAMAGE.
  ****************************************************************************/
 
-#ifndef INCLUDED_SPATIALREFERENCE_HPP
-#define INCLUDED_SPATIALREFERENCE_HPP
+#pragma once
 
 #include <pdal/pdal_internal.hpp>
-
-#include <boost/property_tree/ptree.hpp>
 
 namespace pdal
 {
 
+class PDAL_DLL BOX3D;
 class PDAL_DLL SpatialReference
 {
 public:
@@ -52,20 +50,11 @@ public:
     };
 
     /// Default constructor.
-    SpatialReference();
+    SpatialReference()
+    {}
 
     // calls setFromUserInput() with the given string
     SpatialReference(const std::string& userInput);
-
-    /// Destructor.
-    /// If libgeotiff is enabled, deallocates libtiff and libgeotiff objects used internally.
-    ~SpatialReference();
-
-    /// Copy constryctor.
-    SpatialReference(SpatialReference const& other);
-
-    /// Assignment operator.
-    SpatialReference& operator=(SpatialReference const& rhs);
 
     bool equals(const SpatialReference& other) const;
     bool operator==(const SpatialReference& other) const;
@@ -85,15 +74,19 @@ public:
     /// available.
     std::string getWKT(WKTModeFlag mode_flag = eHorizontalOnly) const;
     std::string getWKT(WKTModeFlag mode_flag, bool pretty) const;
+    std::string getRawWKT() const
+        { return m_wkt; }
 
     /// Sets the SRS using GDAL's OGC WKT. If GDAL is not linked, this
     /// operation has no effect.
     /// \param v - a string containing the WKT string.
-    void setWKT(std::string const& v);
+    void setWKT(std::string const& v)
+        { m_wkt = v; }
 
-    /// Sets the SRS using GDAL's SetFromUserInput function. If GDAL is not linked, this
-    /// operation has no effect.
-    /// \param v - a string containing the definition (filename, proj4, wkt, etc).
+    /// Sets the SRS using GDAL's SetFromUserInput function. If GDAL is
+    /// not linked, this operation has no effect.
+    /// \param v - a string containing the definition (filename, proj4,
+    ///    wkt, etc).
     void setFromUserInput(std::string const& v);
 
     /// Returns the Proj.4 string describing the Spatial Reference System.
@@ -103,6 +96,9 @@ public:
     /// support more coordinate systems and descriptions.
     std::string getProj4() const;
 
+    std::string getHorizontal() const;
+    std::string getVertical() const;
+
     /// Sets the Proj.4 string describing the Spatial Reference System.
     /// If GDAL is linked, it uses GDAL's operations and methods to determine
     /// the Proj.4 string -- otherwise, if libgeotiff is linked, it uses
@@ -111,21 +107,24 @@ public:
     /// \param v - a string containing the Proj.4 string.
     void setProj4(std::string const& v);
 
-    boost::property_tree::ptree toPTree() const;
     void dump() const;
-    
-    bool isGeographic() const; 
-    const std::string& getDescription() const;
+
+    bool isGeographic() const;
+    int computeUTMZone(const BOX3D& box) const;
     const std::string& getName() const;
+    static int calculateZone(double lon, double lat);
 
 private:
     std::string m_wkt;
+    friend PDAL_DLL std::ostream& operator<<(std::ostream& ostr,
+        const SpatialReference& srs);
+    friend PDAL_DLL std::istream& operator>>(std::istream& istr,
+        SpatialReference& srs);
 };
 
-
-extern PDAL_DLL std::ostream& operator<<(std::ostream& ostr, const SpatialReference& srs);
-extern PDAL_DLL std::istream& operator>>(std::istream& istr, SpatialReference& srs);
+PDAL_DLL std::ostream& operator<<(std::ostream& ostr,
+    const SpatialReference& srs);
+PDAL_DLL std::istream& operator>>(std::istream& istr, SpatialReference& srs);
 
 } // namespace pdal
 
-#endif

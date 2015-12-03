@@ -33,52 +33,46 @@
 ****************************************************************************/
 
 #include <pdal/Log.hpp>
-#include <boost/algorithm/string.hpp>
+#include <pdal/util/Utils.hpp>
 
+#include <fstream>
 #include <ostream>
-#include <sstream>
 
 namespace pdal
 {
 
+using namespace LogLevel;
 
 Log::Log(std::string const& leaderString,
          std::string const& outputName)
-    : m_level(logERROR)
+    : m_level(Error)
     , m_deleteStreamOnCleanup(false)
     , m_leader(leaderString)
 {
-    if (boost::iequals(outputName, "stdlog"))
-    {
+
+    if (Utils::iequals(outputName, "stdlog"))
         m_log = &std::clog;
-    }
-    else if (boost::iequals(outputName, "stderr"))
-    {
+    else if (Utils::iequals(outputName, "stderr"))
         m_log = &std::cerr;
-    }
-    else if (boost::iequals(outputName, "stdout"))
-    {
+    else if (Utils::iequals(outputName, "stdout"))
         m_log = &std::cout;
-    }
     else
     {
         m_log = FileUtils::createFile(outputName);
         m_deleteStreamOnCleanup = true;
     }
-
-    m_null_stream.open(sink());
+    makeNullStream();
 }
 
 
 Log::Log(std::string const& leaderString,
          std::ostream* v)
-    : m_level(logERROR)
+    : m_level(Error)
     , m_deleteStreamOnCleanup(false)
     , m_leader(leaderString)
 {
     m_log = v;
-
-    m_null_stream.open(sink());
+    makeNullStream();
 }
 
 
@@ -90,9 +84,21 @@ Log::~Log()
         m_log->flush();
         delete m_log;
     }
-
-    m_log = 0;
+    delete m_nullStream;
 }
+
+
+void Log::makeNullStream()
+{
+#ifdef _WIN32
+    std::string nullFilename = "nul";
+#else
+    std::string nullFilename = "/dev/null";
+#endif
+
+    m_nullStream = new std::ofstream(nullFilename);
+}
+
 
 void Log::floatPrecision(int level)
 {
@@ -100,46 +106,44 @@ void Log::floatPrecision(int level)
     m_log->precision(level);
 }
 
+
 void Log::clearFloat()
 {
     m_log->unsetf(std::ios_base::fixed);
     m_log->unsetf(std::ios_base::floatfield);
 }
-std::ostream& Log::get(LogLevel level)
+
+
+std::ostream& Log::get(LogLevel::Enum level)
 {
     if (level <= m_level)
     {
-        *m_log << "(" << m_leader << " "<< getLevelString(level) <<": " << level << "): ";
-        *m_log << std::string(level < logDEBUG ? 0 : level - logDEBUG, '\t');
+        *m_log << "(" << m_leader << " "<< getLevelString(level) <<": " <<
+            level << "): " <<
+            std::string(level < Debug ? 0 : level - Debug, '\t');
         return *m_log;
     }
-    else
-    {
-        return m_null_stream;
-    }
+    return *m_nullStream;
 
 }
 
-std::string Log::getLevelString(LogLevel level) const
-{
-    std::ostringstream output;
 
+std::string Log::getLevelString(LogLevel::Enum level) const
+{
     switch (level)
     {
-        case logERROR:
-            output << "ERROR";
+        case Error:
+            return "Error";
             break;
-        case logWARNING:
-            output << "WARNING";
+        case Warning:
+            return "Warning";
             break;
-        case logINFO:
-            output << "INFO";
+        case Info:
+            return "Info";
             break;
-
         default:
-            output << "DEBUG";
+            return "Debug";
     }
-
-    return output.str();
 }
+
 } // namespace

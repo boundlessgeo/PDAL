@@ -32,17 +32,14 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#ifndef PYTHONINVOCATION_H
-#define PYTHONINVOCATION_H
+#pragma once
 
 #include <pdal/pdal_internal.hpp>
-#ifdef PDAL_HAVE_PYTHON
 
-#include <pdal/pdal_internal.hpp>
-#include <pdal/PointBuffer.hpp>
-#include <pdal/Options.hpp>
-#include <pdal/plang/PythonEnvironment.hpp>
-#include <pdal/plang/Script.hpp>
+#include "Script.hpp"
+#include "Environment.hpp"
+
+#include <pdal/Dimension.hpp>
 
 namespace pdal
 {
@@ -63,18 +60,12 @@ public:
 
     // creates a Python variable pointing to a (one dimensional) C array
     // adds the new variable to the arguments dictionary
-    void insertArgument(const std::string& name,
-                        boost::uint8_t* data,
-                        boost::uint32_t data_len,
-                        boost::uint32_t data_stride,
-                        dimension::Interpretation dataType,
-                        boost::uint32_t numBytes);
-    void extractResult(const std::string& name,
-                       boost::uint8_t* data,
-                       boost::uint32_t data_len,
-                       boost::uint32_t data_stride,
-                       dimension::Interpretation dataType,
-                       boost::uint32_t numBytes);
+    void insertArgument(std::string const& name,
+                        uint8_t* data,
+                        Dimension::Type::Enum t,
+                        point_count_t count);
+    void *extractResult(const std::string& name,
+                        Dimension::Type::Enum dataType);
 
     bool hasOutputVariable(const std::string& name) const;
 
@@ -84,21 +75,20 @@ public:
     bool execute();
 
     // after a call to execute, this function will return you a list of
-    // the names in the 'outs' dictionary (this is used by the BufferedInvocation
-    // class to find the returned data -- faster to examine what's already
-    // in there than it is to iterate over all the possible names from
-    // the schema)
+    // the names in the 'outs' dictionary (this is used by the
+    // BufferedInvocation class to find the returned data -- faster to
+    // examine what's already in there than it is to iterate over all the
+    // possible names from the schema)
     void getOutputNames(std::vector<std::string>& names);
 
-    static int getPythonDataType(dimension::Interpretation datatype, boost::uint32_t siz);
-
-    static void numpy_init();
+protected:
+    PyObject* m_metaIn;
+    PyObject* m_metaOut;
 
 private:
     void cleanup();
 
     Script m_script;
-    ::pdal::plang::PythonEnvironment& m_environment;
 
     PyObject* m_bytecode;
     PyObject* m_module;
@@ -114,10 +104,6 @@ private:
     Invocation& operator=(Invocation const& rhs); // nope
 };
 
+} // namespace plang
+} // namespace pdal
 
-}
-} // namespaces
-
-#endif
-
-#endif

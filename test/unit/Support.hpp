@@ -32,23 +32,19 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#ifndef UNITTEST_SUPPORT_INCLUDED
-#define UNITTEST_SUPPORT_INCLUDED
+#pragma once
 
 // support functions for unit testing
 
-#include <pdal/Bounds.hpp>
-#include <boost/cstdint.hpp>
-#include <pdal/Utils.hpp>
+#include <pdal/pdal_types.hpp>
+#include <pdal/util/Bounds.hpp>
 
 namespace pdal
 {
-    class PointBuffer;
-    class Schema;
+    class PointView;
     class Stage;
 }
 
-#include <boost/cstdint.hpp>
 #include <string>
 
 class Support
@@ -59,6 +55,13 @@ public:
 
     // returns "datapath + / + file"
     static std::string datapath(const std::string& file);
+
+    // this is where the reference files (input data) live
+    static std::string configuredpath();
+
+    // returns "configuredpath + / + file"
+    static std::string configuredpath(const std::string& file);
+
 
     // this is where the temporary output files go
     static std::string temppath();
@@ -75,55 +78,67 @@ public:
     // returns "name" on unix and "name + .exe" on windows
     static std::string exename(const std::string& name);
 
-    static bool compare_stage_data(pdal::Stage const& a, pdal::Stage const& b);
-    
-    // returns number of bytes different for two binary files (or maxint if a file doesn't exist)
-    static boost::uint32_t diff_files(const std::string& file1, const std::string& file2);
+    // returns number of bytes different for two binary files (or maxint
+    // if a file doesn't exist)
+    static uint32_t diff_files(const std::string& file1,
+       const std::string& file2);
+    static uint32_t diff_files(std::istream& str1, std::istream& str2);
 
     // same as diff_files, but allows for a region of the file be to be ignored
     // (region is specified with a starting offset and a length)
-    static boost::uint32_t diff_files(const std::string& file1, const std::string& file2,
-                                      boost::uint32_t ignorable_start, boost::uint32_t ignorable_length);
+    static uint32_t diff_files(const std::string& file1,
+        const std::string& file2, uint32_t ignorable_start,
+        uint32_t ignorable_length);
 
     // same as above diff_files with ignorable region, but for multiple regions
-    static boost::uint32_t diff_files(const std::string& file1, const std::string& file2,
-                                      boost::uint32_t* ignorable_start, boost::uint32_t* ignorable_length, boost::uint32_t num_ignorables);
+    static uint32_t diff_files(const std::string& file1,
+        const std::string& file2, uint32_t* ignorable_start,
+        uint32_t* ignorable_length, uint32_t num_ignorables);
 
-    // returns number of lines different for two text files (or maxint if a file doesn't exist)
-    // if ignoreLine is not -1, that line will be "ignored" when comparing the two files
-    static boost::uint32_t diff_text_files(const std::string& file1, const std::string& file2, boost::int32_t ignoreLine1=-1);
+    // same as above diff_files with ignorable region, but for multiple regions
+    static uint32_t diff_files(std::istream& str1, std::istream& str2,
+        uint32_t* ignorable_start, uint32_t* ignorable_length,
+        uint32_t num_ignorables);
+
+    // returns number of lines different for two text files (or maxint
+    // if a file doesn't exist) if ignoreLine is not -1, that line will
+    // be "ignored" when comparing the two files
+    static uint32_t diff_text_files(const std::string& file1,
+        const std::string& file2, int32_t ignoreLine1=-1);
+    static uint32_t diff_text_files(std::istream& str1, std::istream& str2,
+        int32_t ignoreLine1=-1);
 
     // returns true iff the two (binary or ascii) files are the same,
     // using the above diff_files/diff_text_files functions
 
-    static bool compare_files(const std::string& file1, const std::string& file2);
-    static bool compare_text_files(const std::string& file1, const std::string& file2);
+    static bool compare_files(const std::string& file1,
+        const std::string& file2);
+    static bool compare_text_files(const std::string& file1,
+        const std::string& file2);
+    static bool compare_text_files(std::istream& str1, std::istream& str2);
 
     // validate a point's XYZ values
-    static void check_pN(const pdal::PointBuffer& data,
-                         std::size_t index, 
+    static void check_pN(const pdal::PointView& data,
+                         pdal::PointId index,
                          double xref, double yref, double zref);
-                       
+
     // validate a point's XYZ, Time, and Color values
-    static void check_pN(const pdal::PointBuffer& data,
-                         std::size_t index, 
-                         double xref, double yref, double zref,
-                         double tref,
-                         boost::uint16_t rref, boost::uint16_t gref, boost::uint16_t bref);
+    static void check_pN(const pdal::PointView& data,
+        pdal::PointId index, double xref, double yref, double zref,
+        double tref, uint16_t rref, uint16_t gref, uint16_t bref);
 
     // these are for the 1.2-with-color image
-    static void check_p0_p1_p2(const pdal::PointBuffer& data);
-    static void check_p100_p101_p102(const pdal::PointBuffer& data);
-    static void check_p355_p356_p357(const pdal::PointBuffer& data);
-    static void check_p710_p711_p712(const pdal::PointBuffer& data);
+    static void check_p0_p1_p2(const pdal::PointView& data);
+    static void check_p100_p101_p102(const pdal::PointView& data);
+    static void check_p355_p356_p357(const pdal::PointView& data);
+    static void check_p710_p711_p712(const pdal::PointView& data);
 
-    static void compareBounds(const pdal::Bounds<double>& p, const pdal::Bounds<double>& q);
+    static void compareBounds(const pdal::BOX3D& p,
+        const pdal::BOX3D& q);
 
-    // executes "cmd" via popen, copying stdout into output and returning the status code
-    //
-    // note: under windows, all "/" characrters in cmd will be converted to "\\" for you
+    // executes "cmd" via popen, copying stdout into output and returning
+    // the status code note: under windows, all "/" characrters in cmd will
+    // be converted to "\\" for you
     // static int run_command(const std::string& cmd, std::string& output);
 };
 
-
-#endif

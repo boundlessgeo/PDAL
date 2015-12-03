@@ -32,18 +32,11 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#include <boost/test/unit_test.hpp>
+#include <pdal/pdal_test_main.hpp>
 
 #include <pdal/UserCallback.hpp>
 
-#ifdef PDAL_COMPILER_GCC
-#pragma GCC diagnostic ignored "-Wfloat-equal"
-#endif
-
 using namespace pdal;
-
-BOOST_AUTO_TEST_SUITE(UserCallbackTest)
-
 
 // our implementation will be that we will request an interrupt
 // when we are more than half done
@@ -53,9 +46,7 @@ public:
     virtual void callback()
     {
         if (getPercentComplete() > 50.0)
-        {
             setInterruptFlag(true);
-        }
     }
 };
 
@@ -63,32 +54,18 @@ public:
 class Worker
 {
 public:
-    Worker(UserCallback& cb)
-        : m_cb(cb)
-        , m_ticks(0)
+    Worker(UserCallback& cb) : m_cb(cb), m_ticks(0)
     {
+        m_cb.setTotal(300);
     }
 
     // each invocation of doWork will represent 1% more done
     // returns true if work is going along okay, false otherwise
     bool doWork()
     {
-        if (!m_cb.check())
-        {
-            return false;
-        }
-
-        if (!m_cb.check())
-        {
-            return false;
-        }
-
-        if (!m_cb.check(m_ticks))
-        {
-            return false;
-        }
-
-        ++m_ticks;
+        m_cb.invoke(++m_ticks);
+        m_cb.invoke(++m_ticks);
+        m_cb.invoke(++m_ticks);
         return true;
     }
 
@@ -100,7 +77,7 @@ private:
 };
 
 
-BOOST_AUTO_TEST_CASE(test1)
+TEST(UserCallbackTest, test1)
 {
     MyUserCallback cb;
 
@@ -108,21 +85,25 @@ BOOST_AUTO_TEST_CASE(test1)
     bool ok;
 
     // first 50%
-    for (int i=0; i<=50; i++)
+    for (int i = 0; i < 50; i++)
     {
         ok = worker.doWork();
-        BOOST_CHECK(ok);
-        boost::uint32_t hb = 3*(i+1);
-        BOOST_CHECK_EQUAL(cb.getHeartbeats(), hb);
-        BOOST_CHECK_CLOSE(cb.getPercentComplete(), (double)i, 0.001);
+        EXPECT_TRUE(ok);
+        uint32_t hb = 3 * (i + 1);
+        EXPECT_EQ(cb.getHeartbeats(), hb);
+        EXPECT_DOUBLE_EQ(cb.getPercentComplete(), (double)(i + 1));
     }
 
     // to 51%...
-    ok = worker.doWork();
-    BOOST_CHECK(!ok);
-    BOOST_CHECK_CLOSE(cb.getPercentComplete(), 51.0, 0.001);
-
-    return;
+    try
+    {
+        ok = true;
+        ok = worker.doWork();
+    }
+    catch (UserCallback::interrupted)
+    {
+        ok = false;
+    }
+    EXPECT_TRUE(!ok);
+    EXPECT_DOUBLE_EQ(100.0*(151.0/300.0), cb.getPercentComplete());
 }
-
-BOOST_AUTO_TEST_SUITE_END()

@@ -6,16 +6,14 @@
 //
 // Blog article: http://mateusz.loskot.net/?p=2819
 
-#include <pdal/pdal_internal.hpp>
-#ifdef PDAL_HAVE_PYTHON
-
-#include "Redirector.hpp"
+#include <pdal/plang/Redirector.hpp>
 
 #ifdef PDAL_COMPILER_MSVC
 #  pragma warning(disable: 4127)  // conditional expression is constant
 #endif
 
-#include <Python.h>
+#include <functional>
+#include <ostream>
 
 namespace pdal
 {
@@ -130,23 +128,48 @@ Redirector::~Redirector()
 
 PyMODINIT_FUNC redirector_init(void)
 {
+#if PY_MAJOR_VERSION >= 3
+    return Redirector::init();
+#else
     Redirector::init();
+#endif
 }
 
+#if PY_MAJOR_VERSION >= 3
+    static struct PyModuleDef redirectordef = {
+        PyModuleDef_HEAD_INIT,
+        "redirector",     /* m_name */
+        "redirector.Stdout objects",  /* m_doc */
+        -1,                  /* m_size */
+        Stdout_methods,    /* m_methods */
+        NULL,                /* m_reload */
+        NULL,                /* m_traverse */
+        NULL,                /* m_clear */
+        NULL,                /* m_free */
+    };
+#endif
 
-void Redirector::init()
+PyObject* Redirector::init()
 {
     StdoutType.tp_new = PyType_GenericNew;
     if (PyType_Ready(&StdoutType) < 0)
-        return;
-
+        return NULL;
+#if PY_MAJOR_VERSION >= 3
+    PyObject* m = PyModule_Create(&redirectordef);
+#else
     PyObject* m = Py_InitModule3("redirector", 0, 0);
+#endif
     if (m)
     {
-        Py_INCREF(&StdoutType);
+        //ABELL - This is bad code as the type cast is invalid. (type pun
+        //  warning.)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+        Py_INCREF(reinterpret_cast<PyObject*>(&StdoutType));
         PyModule_AddObject(m, "Stdout", reinterpret_cast<PyObject*>(&StdoutType));
+#pragma GCC diagnostic pop
     }
-    return;
+    return m;
 }
 
 
@@ -158,7 +181,7 @@ static void my2argwriterfunction(std::ostream* ostr, const std::string& mssg)
 
 void Redirector::set_stdout(std::ostream* ostr)
 {
-    stdout_write_type my1argwriterfunction = boost::bind(&my2argwriterfunction, ostr, _1);
+    stdout_write_type my1argwriterfunction = std::bind(&my2argwriterfunction, ostr, std::placeholders::_1);
     this->set_stdout(my1argwriterfunction);
 
     return;
@@ -188,9 +211,6 @@ void Redirector::reset_stdout()
     m_stdout = 0;
 }
 
+} //namespace plang
+} //namespace pdal
 
-
-} //namespaces
-}
-
-#endif

@@ -32,8 +32,7 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#ifndef INCLUDED_READER_HPP
-#define INCLUDED_READER_HPP
+#pragma once
 
 #include <pdal/Stage.hpp>
 #include <pdal/Options.hpp>
@@ -41,33 +40,39 @@
 namespace pdal
 {
 
-class ReaderIterator;
-class ReaderSequentialIterator;
-class ReaderRandomIterator;
-class ReaderBlockIterator;
-
-//
-// supported options:
-//   <uint32>id
-//   <bool>debug
-//   <uint32>verbose
-//
+class Reader;
 
 class PDAL_DLL Reader : public Stage
 {
 public:
-    Reader(Options const& options);
-    virtual ~Reader();
+    typedef std::function<void(PointView&, PointId)> PointReadFunc;
 
-    virtual void initialize();
+    Reader() : m_count(std::numeric_limits<point_count_t>::max())
+    {}
 
-    /// Serialization
+    void setReadCb(PointReadFunc cb)
+        { m_cb = cb; }
+
+protected:
+    std::string m_filename;
+    point_count_t m_count;
+    PointReadFunc m_cb;
+
+private:
+    virtual PointViewSet run(PointViewPtr view)
+    {
+        PointViewSet viewSet;
+
+        view->clearTemps();
+        read(view, m_count);
+        viewSet.insert(view);
+        return viewSet;
+    }
+    virtual void readerProcessOptions(const Options& options);
+    virtual point_count_t read(PointViewPtr /*view*/, point_count_t /*num*/)
+        { return 0; }
     virtual boost::property_tree::ptree serializePipeline() const;
-
-    // for dumping
-    // virtual boost::property_tree::ptree toPTree() const;
 };
 
 } // namespace pdal
 
-#endif

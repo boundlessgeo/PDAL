@@ -32,13 +32,8 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-//
-#include <boost/scoped_ptr.hpp>
-
 #include <pdal/Writer.hpp>
-#include <pdal/StageIterator.hpp>
 #include <pdal/Stage.hpp>
-#include <pdal/PointBuffer.hpp>
 #include <pdal/UserCallback.hpp>
 
 #include <pdal/PipelineWriter.hpp>
@@ -50,221 +45,96 @@
 namespace pdal
 {
 
-Writer::Writer(Stage& prevStage, const Options& options)
-    : StageBase(StageBase::makeVector(prevStage), options)
-    , m_userCallback(0)
-    , m_writer_buffer(0)
+void Writer::writerProcessOptions(const Options& options)
 {
-    return;
-}
-
-
-void Writer::initialize()
-{
-    StageBase::initialize();
-
-    return;
-}
-
-Writer::~Writer()
-{
-    delete m_writer_buffer;
-}
-
-const SpatialReference& Writer::getSpatialReference() const
-{
-    return m_spatialReference;
-}
-
-
-void Writer::setSpatialReference(const SpatialReference& srs)
-{
-    m_spatialReference = srs;
-}
-
-
-void Writer::setUserCallback(UserCallback* userCallback)
-{
-    m_userCallback = userCallback;
-}
-
-
-UserCallback* Writer::getUserCallback() const
-{
-    return m_userCallback;
-}
-
-
-static void do_callback(double perc, UserCallback* callback)
-{
-    if (!callback) return;
-
-    bool ok = callback->check(perc);
-    if (!ok)
+    auto setOffset = [options](XForm& xform, const std::string& opName)
     {
-        throw pipeline_interrupt("user requested interrupt");
-    }
+        if (options.hasOption(opName))
+            xform.setOffset(options.getValueOrThrow<std::string>(opName));
+    };
 
-    return;
+    auto setScale = [options](XForm& xform, const std::string& opName)
+    {
+        if (options.hasOption(opName))
+            xform.setScale(options.getValueOrThrow<std::string>(opName));
+    };
+
+    setOffset(m_xXform, "offset_x");
+    setOffset(m_yXform, "offset_y");
+    setOffset(m_zXform, "offset_z");
+
+    setScale(m_xXform, "scale_x");
+    setScale(m_yXform, "scale_y");
+    setScale(m_zXform, "scale_z");
+
+    if (options.hasOption("filename"))
+        m_filename = options.getValueOrThrow<std::string>("filename");
+    m_outputDims = options.getValueOrDefault<StringList>("output_dims");
 }
 
 
-static void do_callback(boost::uint64_t pointsWritten, boost::uint64_t pointsToWrite, UserCallback* callback)
+void Writer::setAutoXForm(const PointViewPtr view)
 {
-    if (!callback) return;
+   double xmin = (std::numeric_limits<double>::max)();
+   double xmax = (std::numeric_limits<double>::lowest)();
+   bool xmod = m_xXform.m_autoOffset || m_xXform.m_autoScale;
 
-    bool ok = false;
-    if (pointsToWrite == 0)
+   double ymin = (std::numeric_limits<double>::max)();
+   double ymax = (std::numeric_limits<double>::lowest)();
+   bool ymod = m_yXform.m_autoOffset || m_yXform.m_autoScale;
+
+   double zmin = (std::numeric_limits<double>::max)();
+   double zmax = (std::numeric_limits<double>::lowest)();
+   bool zmod = m_zXform.m_autoOffset || m_zXform.m_autoScale;
+
+   if (!xmod && !ymod && !zmod)
+       return;
+   if (view->empty())
+        return;
+
+    for (PointId idx = 0; idx < view->size(); idx++)
     {
-        ok = callback->check();
-    }
-    else
-    {
-        double perc = ((double)pointsWritten / (double)pointsToWrite) * 100.0;
-        ok = callback->check(perc);
-    }
-    if (!ok)
-    {
-        throw pipeline_interrupt("user requested interrupt");
-    }
-
-    return;
-}
-
-boost::uint64_t Writer::write(boost::uint64_t targetNumPointsToWrite,
-                              boost::uint64_t startingPosition,
-                              boost::uint64_t chunkSize)
-{
-    if (!isInitialized())
-    {
-        throw pdal_error("stage not initialized");
-    }
-
-    boost::uint64_t actualNumPointsWritten = 0;
-
-    UserCallback* callback = getUserCallback();
-    do_callback(0.0, callback);
-
-    const Schema& schema = getPrevStage().getSchema();
-
-    if (m_writer_buffer == 0)
-    {
-        boost::uint64_t capacity(targetNumPointsToWrite);
-        if (capacity == 0)
+        if (xmod)
         {
-            if (chunkSize)
-                capacity = chunkSize;
-            else
-                capacity = 131072;
+            double x = view->getFieldAs<double>(Dimension::Id::X, idx);
+            xmin = std::min(x, xmin);
+            xmax = std::max(x, xmax);
         }
-        else
+        if (ymod)
         {
-            if (chunkSize)
-                capacity = (std::min)(static_cast<boost::uint64_t>(chunkSize), targetNumPointsToWrite) ;
-            else
-                capacity = targetNumPointsToWrite;
+            double y = view->getFieldAs<double>(Dimension::Id::Y, idx);
+            ymin = std::min(y, ymin);
+            ymax = std::max(y, ymax);
         }
-
-        if (capacity > std::numeric_limits<boost::uint32_t>::max())
-            throw pdal_error("Buffer capacity is larger than 2^32 points!");
-        m_writer_buffer = new PointBuffer(schema, static_cast<boost::uint32_t>(capacity));
-
+        if (zmod)
+        {
+            double z = view->getFieldAs<double>(Dimension::Id::Z, idx);
+            zmin = std::min(z, zmin);
+            zmax = std::max(z, zmax);
+        }
     }
 
-    boost::scoped_ptr<StageSequentialIterator> iter(getPrevStage().createSequentialIterator(*m_writer_buffer));
-
-    if (startingPosition)
-        iter->skip(startingPosition);
-
-    if (!iter) throw pdal_error("Unable to obtain iterator from previous stage!");
-
-    // if we don't have an SRS, try to forward the one from the prev stage
-    if (m_spatialReference.empty()) m_spatialReference = getPrevStage().getSpatialReference();
-
-    writeBegin(targetNumPointsToWrite);
-
-    iter->readBegin();
-
-
-
-    //
-    // The user has requested a specific number of points: proceed a
-    // chunk at a time until we reach that number.  (If that number
-    // is 0, we proceed until no more points can be read.)
-    //
-    // If the user requests an interrupt while we're running, we'll throw.
-    //
-    while (true)
+    if (m_xXform.m_autoOffset)
     {
-        // have we hit the end already?
-        if (iter->atEnd()) break;
-
-        // rebuild our PointBuffer, if it needs to hold less than the default max chunk size
-        if (targetNumPointsToWrite != 0)
-        {
-            const boost::int64_t numRemainingPointsToRead = targetNumPointsToWrite - actualNumPointsWritten;
-
-            const boost::int64_t numPointsToReadThisChunk64 = std::min<boost::int64_t>(numRemainingPointsToRead, chunkSize == 0 ? numRemainingPointsToRead : chunkSize);
-            const boost::uint32_t numPointsToReadThisChunk = static_cast<boost::uint32_t>(numPointsToReadThisChunk64);
-
-            // we are reusing the buffer, so we may need to adjust the capacity for the last (and likely undersized) chunk
-            if (m_writer_buffer->getCapacity() != numPointsToReadThisChunk)
-            {
-                m_writer_buffer->resize(numPointsToReadThisChunk);
-            }
-        }
-
-        // read...
-        iter->readBufferBegin(*m_writer_buffer);
-        const boost::uint32_t numPointsReadThisChunk = iter->readBuffer(*m_writer_buffer);
-        iter->readBufferEnd(*m_writer_buffer);
-
-        assert(numPointsReadThisChunk == m_writer_buffer->getNumPoints());
-        assert(numPointsReadThisChunk <= m_writer_buffer->getCapacity());
-        
-        // Some drivers may do header setups and such, even for situations 
-        // where there's no points, so we should a buffer begin. 
-        writeBufferBegin(*m_writer_buffer);
-        
-        // were there no points left to write this chunk?
-        if (numPointsReadThisChunk == 0) 
-        {
-            // Match the above writeBufferBegin now that 
-            // we're breaking the loop
-            writeBufferEnd(*m_writer_buffer);
-            break;
-        }
-
-        // write...
-        const boost::uint32_t numPointsWrittenThisChunk = writeBuffer(*m_writer_buffer);
-        assert(numPointsWrittenThisChunk == numPointsReadThisChunk);
-        writeBufferEnd(*m_writer_buffer);
-
-        // update count
-        actualNumPointsWritten += numPointsWrittenThisChunk;
-
-        do_callback(actualNumPointsWritten, targetNumPointsToWrite, callback);
-
-        if (targetNumPointsToWrite != 0)
-        {
-            // have we done enough yet?
-            if (actualNumPointsWritten >= targetNumPointsToWrite) break;
-        }
-
-        // reset the buffer, so we can use it again
-        m_writer_buffer->setNumPoints(0);
+        m_xXform.m_offset = xmin;
+        xmax -= xmin;
     }
-
-    iter->readEnd();
-
-    writeEnd(actualNumPointsWritten);
-
-    assert((targetNumPointsToWrite == 0) || (actualNumPointsWritten <= targetNumPointsToWrite));
-
-    do_callback(100.0, callback);
-
-
-    return actualNumPointsWritten;
+    if (m_yXform.m_autoOffset)
+    {
+        m_yXform.m_offset = ymin;
+        ymax -= ymin;
+    }
+    if (m_zXform.m_autoOffset)
+    {
+        m_zXform.m_offset = zmin;
+        zmax -= zmin;
+    }
+    if (m_xXform.m_autoScale)
+        m_xXform.m_scale = xmax / (std::numeric_limits<int>::max)();
+    if (m_yXform.m_autoScale)
+        m_yXform.m_scale = ymax / (std::numeric_limits<int>::max)();
+    if (m_zXform.m_autoScale)
+        m_zXform.m_scale = zmax / (std::numeric_limits<int>::max)();
 }
 
 
@@ -276,7 +146,7 @@ boost::property_tree::ptree Writer::serializePipeline() const
 
     PipelineWriter::write_option_ptree(tree, getOptions());
 
-    const Stage& stage = getPrevStage();
+    const Stage& stage = *getInputs()[0];
     boost::property_tree::ptree subtree = stage.serializePipeline();
 
     tree.add_child(subtree.begin()->first, subtree.begin()->second);
@@ -286,16 +156,5 @@ boost::property_tree::ptree Writer::serializePipeline() const
 
     return root;
 }
-
-
-// boost::property_tree::ptree Writer::toPTree() const
-// {
-//     boost::property_tree::ptree tree = StageBase::toPTree();
-// 
-//     // (nothing to add for a Writer)
-// 
-//     return tree;
-// }
-
 
 } // namespace pdal

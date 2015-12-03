@@ -5,204 +5,115 @@
 # Copyright (c) 2009 Mateusz Loskot <mateusz@loskot.net>
 #
 ###############################################################################
-SET(PDAL_UNIT_TEST pdal_test)
 
-if (LIBXML2_FOUND)
-SET (PDAL_UNITTEST_XMLSCHEMA_TEST XMLSchemaTest.cpp)
-endif()
+configure_file(TestConfig.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/TestConfig.hpp")
 
-SET(PDAL_UNITTEST_TEST_SRC
-    BoundsTest.cpp
-    drivers/bpf/BPFTest.cpp
-    drivers/buffer/BufferReaderTest.cpp
-    filters/ByteSwapFilterTest.cpp
-    filters/CacheFilterTest.cpp
-    drivers/caris/CarisReaderTest.cpp
-    filters/ChipperTest.cpp
-    filters/ColorFilterTest.cpp
-    filters/ColorizationFilterTest.cpp
-    ConfigTest.cpp
-    filters/CropFilterTest.cpp
-    filters/DecimationFilterTest.cpp
-    DimensionTest.cpp
-    EnvironmentTest.cpp
-    drivers/faux/FauxReaderTest.cpp
-    drivers/faux/FauxWriterTest.cpp
-    FileUtilsTest.cpp
-    filters/HexbinFilterTest.cpp
-    filters/InPlaceReprojectionFilterTest.cpp
-    drivers/las/LasReaderTest.cpp
-    drivers/las/LasWriterTest.cpp
-	LogTest.cpp
-    MetadataTest.cpp
-    filters/MosaicFilterTest.cpp
-    OptionsTest.cpp
-    PipelineManagerTest.cpp
-    drivers/pipeline/PipelineReaderTest.cpp
-    drivers/pipeline/PipelineWriterTest.cpp
-    PointBufferCacheTest.cpp
-    PointBufferTest.cpp
-    drivers/qfit/QFITReaderTest.cpp
-    RangeTest.cpp
-    filters/ScalingFilterTest.cpp
-    filters/SelectorFilterTest.cpp
-    SchemaLayoutTest.cpp
-    SchemaTest.cpp
-    SpatialReferenceTest.cpp
-    StageFactoryTest.cpp
-    filters/StatsFilterTest.cpp
-    StreamFactoryTest.cpp
-    SupportTest.cpp
-    drivers/terrasolid/TerraSolidReaderTest.cpp
-    drivers/text/TextWriterTest.cpp
-	ThreadTest.cpp
-    UserCallbackTest.cpp
-    UtilsTest.cpp
-    VectorTest.cpp
-    ${PDAL_UNITTEST_XMLSCHEMA_TEST}
-    )
+file(GLOB_RECURSE inFiles RELATIVE "${CMAKE_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/test/data/*.in")
+foreach(infileName ${inFiles})
+    string(REGEX REPLACE ".in\$" "" outfileName "${infileName}")
+    configure_file("${CMAKE_SOURCE_DIR}/${infileName}" "${CMAKE_BINARY_DIR}/${outfileName}")
+endforeach()
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-if(WITH_APPS)
-  if(LIBXML2_FOUND)
-    list(APPEND PDAL_UNITTEST_TEST_SRC 
-      apps/pcinfoTest.cpp
-    )
-  endif(LIBXML2_FOUND)
-
-  list(APPEND PDAL_UNITTEST_TEST_SRC
-    apps/pc2pcTest.cpp
-    apps/pcpipelineTest.cpp
-  )
-endif(WITH_APPS)
-
-set(PDAL_PLANG_TEST_SRC
-    plang/PLangTest.cpp
-    plang/PredicateFilterTest.cpp
-    plang/ProgrammableFilterTest.cpp
+include_directories(
+    ${PROJECT_SOURCE_DIR}/include
+    ${GDAL_INCLUDE_DIR}
+    ${PROJECT_SOURCE_DIR}/io/bpf
+    ${PROJECT_SOURCE_DIR}/io/buffer
+    ${PROJECT_SOURCE_DIR}/io/faux
+    ${PROJECT_SOURCE_DIR}/io/las
+    ${PROJECT_SOURCE_DIR}/io/optech
+    ${PROJECT_SOURCE_DIR}/io/ply
+    ${PROJECT_SOURCE_DIR}/io/qfit
+    ${PROJECT_SOURCE_DIR}/io/sbet
+    ${PROJECT_SOURCE_DIR}/io/text
+    ${PROJECT_SOURCE_DIR}/io/terrasolid
+    ${PROJECT_SOURCE_DIR}/filters/chipper
+    ${PROJECT_SOURCE_DIR}/filters/colorization
+    ${PROJECT_SOURCE_DIR}/filters/crop
+    ${PROJECT_SOURCE_DIR}/filters/decimation
+    ${PROJECT_SOURCE_DIR}/filters/ferry
+    ${PROJECT_SOURCE_DIR}/filters/mortonorder
+    ${PROJECT_SOURCE_DIR}/filters/reprojection
+    ${PROJECT_SOURCE_DIR}/filters/range
+    ${PROJECT_SOURCE_DIR}/filters/sort
+    ${PROJECT_SOURCE_DIR}/filters/splitter
+    ${PROJECT_SOURCE_DIR}/filters/stats
+    ${PROJECT_SOURCE_DIR}/filters/transformation
+    ${PROJECT_SOURCE_DIR}/kernels/info
 )
 
-SET(PDAL_UNITTEST_TEST_INC
-    )
-    
-SET(PDAL_UNITTEST_CONFIG_SRC
-    Support.cpp
-    TestConfig.cpp
-    main.cpp
-    )
-
-SET(PDAL_UNITTEST_CONFIG_INC
-    Support.hpp
-    TestConfig.hpp
-    )
-
-
-if (WITH_ORACLE)
-if (NOT USE_PDAL_PLUGIN_OCI)
-    set(PDAL_OCI_TEST_CPP drivers/oci/OCITest.cpp)
-
-    FOREACH(file ${PDAL_OCI_TEST_CPP})
-            SET(PDAL_UNITTEST_TEST_SRC "${PDAL_UNITTEST_TEST_SRC};${file}" CACHE INTERNAL "source files for test")
-    ENDFOREACH(file)
+if (WITH_GEOTIFF)
+    include_directories(${GEOTIFF_INCLUDE_DIR})
 endif()
 
-endif (WITH_ORACLE)
+PDAL_ADD_TEST(pdal_bounds_test FILES BoundsTest.cpp)
+PDAL_ADD_TEST(pdal_config_test FILES ConfigTest.cpp)
+PDAL_ADD_TEST(pdal_file_utils_test FILES FileUtilsTest.cpp)
+PDAL_ADD_TEST(pdal_georeference_test FILES GeoreferenceTest.cpp)
+PDAL_ADD_TEST(pdal_kdindex_test FILES KDIndexTest.cpp)
+PDAL_ADD_TEST(pdal_log_test FILES LogTest.cpp)
+PDAL_ADD_TEST(pdal_metadata_test FILES MetadataTest.cpp)
+PDAL_ADD_TEST(pdal_options_test FILES OptionsTest.cpp)
+PDAL_ADD_TEST(pdal_pdalutils_test FILES PDALUtilsTest.cpp)
+PDAL_ADD_TEST(pdal_pipeline_manager_test FILES PipelineManagerTest.cpp)
+PDAL_ADD_TEST(pdal_point_view_test FILES PointViewTest.cpp)
+PDAL_ADD_TEST(pdal_point_table_test FILES PointTableTest.cpp)
+PDAL_ADD_TEST(pdal_spatial_reference_test FILES SpatialReferenceTest.cpp)
+PDAL_ADD_TEST(pdal_support_test FILES SupportTest.cpp)
+PDAL_ADD_TEST(pdal_user_callback_test FILES UserCallbackTest.cpp)
+PDAL_ADD_TEST(pdal_utils_test FILES UtilsTest.cpp)
 
-if (WITH_SOCI)
-if (NOT USE_PDAL_PLUGIN_SOCI)
-    set(PDAL_SOCI_TEST_CPP drivers/soci/Writer.cpp)
-
-    FOREACH(file ${PDAL_SOCI_TEST_CPP})
-            SET(PDAL_UNITTEST_TEST_SRC "${PDAL_UNITTEST_TEST_SRC};${file}" CACHE INTERNAL "source files for test")
-    ENDFOREACH(file)
+if (PDAL_HAVE_LAZPERF)
+    PDAL_ADD_TEST(pdal_lazperf_test FILES CompressionTest.cpp)
 endif()
 
-endif (WITH_SOCI)
+#
+# sources for the native io
+#
+PDAL_ADD_TEST(pdal_io_bpf_test FILES io/bpf/BPFTest.cpp)
+PDAL_ADD_TEST(pdal_io_buffer_test FILES io/buffer/BufferTest.cpp)
+PDAL_ADD_TEST(pdal_io_faux_test FILES io/faux/FauxReaderTest.cpp)
+PDAL_ADD_TEST(pdal_io_las_reader_test FILES io/las/LasReaderTest.cpp)
+PDAL_ADD_TEST(pdal_io_las_writer_test FILES io/las/LasWriterTest.cpp)
+PDAL_ADD_TEST(pdal_io_optech_test FILES io/optech/OptechReaderTest.cpp)
+PDAL_ADD_TEST(pdal_io_ply_reader_test FILES io/ply/PlyReaderTest.cpp)
+PDAL_ADD_TEST(pdal_io_ply_writer_test FILES io/ply/PlyWriterTest.cpp)
+PDAL_ADD_TEST(pdal_io_qfit_test FILES io/qfit/QFITReaderTest.cpp)
+PDAL_ADD_TEST(pdal_io_sbet_reader_test FILES io/sbet/SbetReaderTest.cpp)
+PDAL_ADD_TEST(pdal_io_sbet_writer_test FILES io/sbet/SbetWriterTest.cpp)
+PDAL_ADD_TEST(pdal_io_terrasolid_test FILES io/terrasolid/TerrasolidReaderTest.cpp)
 
-if (WITH_GDAL)
-    set(PDAL_GDAL_TEST_CPP
-        GDALUtilsTest.cpp
-        drivers/nitf/NitfReaderTest.cpp
-        )
+#
+# sources for the native filters
+#
+PDAL_ADD_TEST(pdal_filters_chipper_test FILES filters/ChipperTest.cpp)
+PDAL_ADD_TEST(pdal_filters_colorization_test FILES filters/ColorizationFilterTest.cpp)
+PDAL_ADD_TEST(pdal_filters_crop_test FILES filters/CropFilterTest.cpp)
+PDAL_ADD_TEST(pdal_filters_decimation_test FILES filters/DecimationFilterTest.cpp)
+PDAL_ADD_TEST(pdal_filters_ferry_test FILES filters/FerryFilterTest.cpp)
+PDAL_ADD_TEST(pdal_filters_merge_test FILES filters/MergeTest.cpp)
+PDAL_ADD_TEST(pdal_filters_reprojection_test FILES filters/ReprojectionFilterTest.cpp)
+PDAL_ADD_TEST(pdal_filters_range_test FILES filters/RangeFilterTest.cpp)
+PDAL_ADD_TEST(pdal_filters_sort_test FILES filters/SortFilterTest.cpp)
+PDAL_ADD_TEST(pdal_filters_splitter_test FILES filters/SplitterTest.cpp)
+PDAL_ADD_TEST(pdal_filters_stats_test FILES filters/StatsFilterTest.cpp)
+PDAL_ADD_TEST(pdal_filters_transformation_test FILES filters/TransformationFilterTest.cpp)
 
-    FOREACH(file ${PDAL_GDAL_TEST_CPP})
-            SET(PDAL_UNITTEST_TEST_SRC "${PDAL_UNITTEST_TEST_SRC};${file}" CACHE INTERNAL "source files for test")
-    ENDFOREACH(file)
-endif (WITH_GDAL)
-
-if (WITH_NITRO)
-    set(PDAL_NITRO_TEST_CPP
-        drivers/nitf/NitfWriterTest.cpp
-        )
-
-    FOREACH(file ${PDAL_NITRO_TEST_CPP})
-            SET(PDAL_UNITTEST_TEST_SRC "${PDAL_UNITTEST_TEST_SRC};${file}" CACHE INTERNAL "source files for test")
-    ENDFOREACH(file)
-endif (WITH_NITRO)
-
-set(PDAL_UNITTEST_SOURCES "")
-FOREACH(file ${PDAL_UNITTEST_TEST_SRC})
-        SET(PDAL_UNITTEST_SOURCES "${PDAL_UNITTEST_SOURCES};${file}" CACHE INTERNAL "source files for test")
-ENDFOREACH(file)
-
-FOREACH(file ${PDAL_PLANG_TEST_SRC})
-        SET(PDAL_UNITTEST_SOURCES "${PDAL_UNITTEST_SOURCES};${file}" CACHE INTERNAL "source files for test")
-ENDFOREACH(file)
-
-FOREACH(file ${PDAL_UNITTEST_CONFIG_SRC})
-        SET(PDAL_UNITTEST_SOURCES "${PDAL_UNITTEST_SOURCES};${file}" CACHE INTERNAL "source files for test")
-ENDFOREACH(file)
-FOREACH(file ${PDAL_UNITTEST_CONFIG_INC})
-        SET(PDAL_UNITTEST_SOURCES "${PDAL_UNITTEST_SOURCES};${file}" CACHE INTERNAL "source files for test")
-ENDFOREACH(file)
-
-source_group("Header Files" FILES ${PDAL_UNITTEST_TEST_INC})
-source_group("Header Files\\config" FILES ${PDAL_UNITTEST_CONFIG_INC})
-source_group("Source Files" FILES ${PDAL_UNITTEST_TEST_SRC})
-source_group("Source Files\\config" FILES ${PDAL_UNITTEST_CONFIG_SRC})
-
-
-INCLUDE_DIRECTORIES(
-    .
-    ../../include
-    ${GDAL_INCLUDE_DIR}
-    ${GEOTIFF_INCLUDE_DIR}
-    ${ORACLE_INCLUDE_DIR})
-
-ADD_EXECUTABLE(${PDAL_UNIT_TEST} ${PDAL_UNITTEST_SOURCES})
-
-set_target_properties(${PDAL_UNIT_TEST} PROPERTIES COMPILE_DEFINITIONS PDAL_DLL_IMPORT)
-
-if(WIN32)
-    add_definitions("-DPDAL_DLL_EXPORT=1")
-  if (MSVC)
-    #add_definitions("-DBOOST_TEST_DYN_LINK")
-  endif()
-else()
-    # Our own static build of embedded boost should do BOOST_TEST_DYN_LINK 
-    # when it is compiled, but regular static builds of Boost will 
-    # not do this. 
-    if(Boost_PROGRAM_OPTIONS_LIBRARY MATCHES "\\.a$" )
-        # pass, we can compile static
-        message(STATUS "Static boost for boost::unit_test, not setting BOOST_TEST_DYN_LINK")
-    else()
-        message(STATUS "No non-embed static boost library found, setting BOOST_TEST_DYN_LINK")
-        add_definitions("-DBOOST_TEST_DYN_LINK")
+#
+# conditionally append apps/libxml2 sources
+#
+if (WITH_APPS)
+    if (LASZIP_FOUND)
+        PDAL_ADD_TEST(pdal_merge_test FILES apps/MergeTest.cpp)
     endif()
+    PDAL_ADD_TEST(pc2pc_test FILES apps/pc2pcTest.cpp)
+
+    if (BUILD_PIPELINE_TESTS)
+        PDAL_ADD_TEST(pcpipeline_test FILES apps/pcpipelineTest.cpp)
+    endif()
+endif(WITH_APPS)
+
+if(LIBXML2_FOUND)
+    PDAL_ADD_TEST(xml_schema_test FILES XMLSchemaTest.cpp)
 endif()
-
-if(WIN32)
-    TARGET_LINK_LIBRARIES(${PDAL_UNIT_TEST} 
-        "${PDAL_LIB_NAME}"
-        "${LIBLAS_LIBRARY}"
-        "${ZLIB_LIBRARIES}"
-        "${TIFF_LIBRARY}"
-        "${GEOTIFF_LIBRARY}"
-        "${GDAL_LIBRARY}"
-        "${SPATIALINDEX_LIBRARY}" "${Boost_LIBRARIES}" "${ORACLE_LIBRARY}")
-else()
-    TARGET_LINK_LIBRARIES(${PDAL_UNIT_TEST} 
-        ${PDAL_LIB_NAME} ${APPS_CPP_DEPENDENCIES} ${ORACLE_LIBRARY})
-endif() 
-
-
-ADD_TEST(pdal_test "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/pdal_test" "${PROJECT_SOURCE_DIR}/test/data" --catch_system_errors=no)

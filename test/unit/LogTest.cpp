@@ -32,25 +32,24 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#include <boost/test/unit_test.hpp>
-#include <boost/cstdint.hpp>
+#include <pdal/pdal_test_main.hpp>
 #include <pdal/Options.hpp>
-#include <pdal/PointBuffer.hpp>
-#include <pdal/drivers/faux/Reader.hpp>
-#include <pdal/filters/Programmable.hpp>
+#include <pdal/PointView.hpp>
+#include <pdal/StageFactory.hpp>
+#include <FauxReader.hpp>
 #include "Support.hpp"
 
 using namespace pdal;
 
-BOOST_AUTO_TEST_SUITE(LogTest)
-
-BOOST_AUTO_TEST_CASE(test_one)
+TEST(LogTest, test_one)
 {
-    const Bounds<double> bounds(1.0, 2.0, 3.0, 101.0, 102.0, 103.0);
+    StageFactory f;
+
+    BOX3D bounds(1.0, 2.0, 3.0, 101.0, 102.0, 103.0);
 
     Option opt1("bounds", bounds);
     Option opt2("log", Support::temppath("mylog_one.txt"));
-    Option opt3("num_points", 1000);
+    Option opt3("num_points", 750);
     Option opt4("mode", "constant");
 
     Options opts;
@@ -60,310 +59,27 @@ BOOST_AUTO_TEST_CASE(test_one)
     opts.add(opt4);
 
     {
-        pdal::drivers::faux::Reader reader(opts);
-        reader.initialize();
+        PointTable table;
 
-        BOOST_CHECK_EQUAL(reader.log()->getLevel(), logERROR);
-        reader.log()->setLevel(logDEBUG5);
-        BOOST_CHECK_EQUAL(reader.log()->getLevel(), logDEBUG5);
+        FauxReader reader;
+        reader.setOptions(opts);
+        reader.prepare(table);
 
-        const Schema& schema = reader.getSchema();
-        PointBuffer data(schema, 750);
+        EXPECT_EQ(reader.log()->getLevel(), LogLevel::Error);
+        reader.log()->setLevel(LogLevel::Debug5);
+        EXPECT_EQ(reader.log()->getLevel(), LogLevel::Debug5);
 
-        StageSequentialIterator* iter = reader.createSequentialIterator(data);
-        boost::uint32_t numRead = iter->read(data);
-
-        BOOST_CHECK_EQUAL(numRead, 750u);
-
-        delete iter;
+        PointViewSet viewSet = reader.execute(table);
+        EXPECT_EQ(viewSet.size(), 1u);
+        PointViewPtr view = *viewSet.begin();
+        EXPECT_EQ(view->size(), 750u);
     }
-
-    bool ok = Support::compare_text_files(Support::temppath("mylog_one.txt"), Support::datapath("logtest.txt"));
-    BOOST_CHECK(ok);
+    bool ok = Support::compare_text_files(
+        Support::temppath("mylog_one.txt"),
+        Support::datapath("logs/logtest.txt"));
 
     if (ok)
-    {
         FileUtils::deleteFile(Support::temppath("mylog_one.txt"));
-    }
-    
 
-    return;
+    EXPECT_TRUE(ok);
 }
-
-#ifdef PDAL_HAVE_PYTHON
-
-BOOST_AUTO_TEST_CASE(test_two_a)
-{
-    Options reader_opts;
-    {
-        const Bounds<double> bounds(1.0, 2.0, 3.0, 101.0, 102.0, 103.0);
-        Option opt1("bounds", bounds);
-        Option opt2("log", Support::temppath("logtest_123.txt"));
-        Option opt3("num_points", 1000);
-        Option opt4("mode", "constant");
-
-        reader_opts.add(opt1);
-        reader_opts.add(opt2);
-        reader_opts.add(opt3);
-        reader_opts.add(opt4);
-    }
-
-    Options xfilter_opts;
-    {
-        const pdal::Option source("source",
-            "import numpy as np\n"
-            "def xfunc(ins,outs):\n"
-            "  X = ins['X']\n"
-            "  #print ins['X']\n"
-            "  X = X + 1.0\n"
-            "  outs['X'] = X\n"
-            "  return True\n"
-            );
-        const pdal::Option module("module", "xModule");
-        const pdal::Option function("function", "xfunc");
-        xfilter_opts.add(source);
-        xfilter_opts.add(module);
-        xfilter_opts.add(function);
-    
-        //Option optlog("log", Support::temppath("logtest_2.txt"));
-        //xfilter_opts.add(optlog);
-    }
-
-    Options yfilter_opts;
-    {
-        const pdal::Option source("source",
-            "import numpy as np\n"
-            "def yfunc(ins,outs):\n"
-            "  Y = ins['Y']\n"
-            "  #print ins['Y']\n"
-            "  Y = Y + 1.0\n"
-            "  outs['Y'] = Y\n"
-            "  return True\n"
-            );
-        const pdal::Option module("module", "yModule");
-        const pdal::Option function("function", "yfunc");
-        yfilter_opts.add(source);
-        yfilter_opts.add(module);
-        yfilter_opts.add(function);
-    
-        //Option optlog("log", Support::temppath("logtest_3.txt"));
-        //yfilter_opts.add(optlog);
-    }
-
-    {
-        drivers::faux::Reader reader(reader_opts);
-        filters::Programmable xfilter(reader, xfilter_opts);
-        filters::Programmable yfilter(xfilter, yfilter_opts);
-
-        yfilter.initialize();
-
-        reader.log()->setLevel(logDEBUG5);
-        xfilter.log()->setLevel(logDEBUG5);
-        yfilter.log()->setLevel(logDEBUG5);
-
-        const Schema& schema = yfilter.getSchema();
-        PointBuffer data(schema, 750);
-
-        StageSequentialIterator* iter = yfilter.createSequentialIterator(data);
-        boost::uint32_t numRead = iter->read(data);
-
-        BOOST_CHECK_EQUAL(numRead, 750u);
-
-        delete iter;
-    }
-
-    bool ok1 = Support::compare_text_files(Support::temppath("logtest_123.txt"), Support::datapath("logtest_123.txt"));
-    BOOST_CHECK(ok1);
-    //bool ok2 = Support::compare_text_files(Support::temppath("logtest_2.txt"), Support::datapath("logtest_2.txt"));
-    //BOOST_CHECK(ok2);
-    //bool ok3 = Support::compare_text_files(Support::temppath("logtest_3.txt"), Support::datapath("logtest_3.txt"));
-    //BOOST_CHECK(ok3);
-    if (ok1)
-    {
-        FileUtils::deleteFile(Support::temppath("logtest_123.txt"));
-    }
-    
-    
-    //FileUtils::deleteFile(Support::temppath("logtest_2.txt"));
-    //FileUtils::deleteFile(Support::temppath("logtest_3.txt"));
-
-    return;
-}
-
-
-BOOST_AUTO_TEST_CASE(test_two_b)
-{
-    Options reader_opts;
-    {
-        const Bounds<double> bounds(1.0, 2.0, 3.0, 101.0, 102.0, 103.0);
-        Option opt1("bounds", bounds);
-        Option opt2("log", Support::temppath("logtest_test_two_b_1.txt"));
-        Option opt3("num_points", 1000);
-        Option opt4("mode", "constant");
-
-        reader_opts.add(opt1);
-        reader_opts.add(opt2);
-        reader_opts.add(opt3);
-        reader_opts.add(opt4);
-    }
-
-    Options xfilter_opts;
-    {
-        const pdal::Option source("source",
-            "import numpy as np\n"
-            "def xfunc(ins,outs):\n"
-            "  X = ins['X']\n"
-            "  #print ins['X']\n"
-            "  X = X + 1.0\n"
-            "  outs['X'] = X\n"
-            "  return True\n"
-            );
-        const pdal::Option module("module", "xModule");
-        const pdal::Option function("function", "xfunc");
-        xfilter_opts.add(source);
-        xfilter_opts.add(module);
-        xfilter_opts.add(function);
-    
-        Option optlog("log", Support::temppath("logtest_test_two_b_2.txt"));
-        xfilter_opts.add(optlog);
-    }
-
-    Options yfilter_opts;
-    {
-        const pdal::Option source("source",
-            "import numpy as np\n"
-            "def yfunc(ins,outs):\n"
-            "  Y = ins['Y']\n"
-            "  #print ins['Y']\n"
-            "  Y = Y + 1.0\n"
-            "  outs['Y'] = Y\n"
-            "  return True\n"
-            );
-        const pdal::Option module("module", "yModule");
-        const pdal::Option function("function", "yfunc");
-        yfilter_opts.add(source);
-        yfilter_opts.add(module);
-        yfilter_opts.add(function);
-    
-        Option optlog("log", Support::temppath("logtest_test_two_b_3.txt"));
-        yfilter_opts.add(optlog);
-    }
-
-    {
-        drivers::faux::Reader reader(reader_opts);
-        filters::Programmable xfilter(reader, xfilter_opts);
-        filters::Programmable yfilter(xfilter, yfilter_opts);
-
-        yfilter.initialize();
-
-        reader.log()->setLevel(logDEBUG5);
-        xfilter.log()->setLevel(logDEBUG5);
-        yfilter.log()->setLevel(logDEBUG5);
-
-        const Schema& schema = yfilter.getSchema();
-        PointBuffer data(schema, 750);
-
-        StageSequentialIterator* iter = yfilter.createSequentialIterator(data);
-        boost::uint32_t numRead = iter->read(data);
-
-        BOOST_CHECK_EQUAL(numRead, 750u);
-
-        delete iter;
-    }
-
-    bool ok1 = Support::compare_text_files(Support::temppath("logtest_test_two_b_1.txt"), Support::datapath("logtest_1.txt"));
-    BOOST_CHECK(ok1);
-    bool ok2 = Support::compare_text_files(Support::temppath("logtest_test_two_b_2.txt"), Support::datapath("logtest_2.txt"));
-    BOOST_CHECK(ok2);
-    bool ok3 = Support::compare_text_files(Support::temppath("logtest_test_two_b_3.txt"), Support::datapath("logtest_3.txt"));
-    BOOST_CHECK(ok3);
-
-    if (ok1)
-    {
-        FileUtils::deleteFile(Support::temppath("logtest_test_two_b_1.txt"));
-    }
-
-    if (ok2)
-    {
-        FileUtils::deleteFile(Support::temppath("logtest_test_two_b_2.txt"));
-    }
-
-    if (ok3)
-    {
-        FileUtils::deleteFile(Support::temppath("logtest_test_two_b_3.txt"));
-    }        
-
-    return;
-}
-
-
-BOOST_AUTO_TEST_CASE(test_three)
-{
-    // verify we can redirect the stdout inside the python script
-
-    Options reader_opts;
-    {
-        const Bounds<double> bounds(1.0, 2.0, 3.0, 101.0, 102.0, 103.0);
-        Option opt1("bounds", bounds);
-        Option opt2("num_points", 1000);
-        Option opt3("mode", "constant");
-
-        reader_opts.add(opt1);
-        reader_opts.add(opt2);
-        reader_opts.add(opt3);
-
-        Option optlog("log", Support::temppath("mylog_three.txt"));
-        reader_opts.add(optlog);
-    }
-
-    Options xfilter_opts;
-    {
-        const pdal::Option source("source",
-            "import numpy as np\n"
-            "def xfunc(ins,outs):\n"
-            "  X = ins['X']\n"
-            "  print \"Hi!\"\n"
-            "  X = X + 1.0\n"
-            "  outs['X'] = X\n"
-            "  return True\n"
-            );
-        const pdal::Option module("module", "xModule");
-        const pdal::Option function("function", "xfunc");
-        xfilter_opts.add(source);
-        xfilter_opts.add(module);
-        xfilter_opts.add(function);
-    }
-
-    {
-        drivers::faux::Reader reader(reader_opts);
-        filters::Programmable xfilter(reader, xfilter_opts);
-
-        xfilter.initialize();
-
-        const Schema& schema = xfilter.getSchema();
-        PointBuffer data(schema, 750);
-
-        StageSequentialIterator* iter = xfilter.createSequentialIterator(data);
-        boost::uint32_t numRead = iter->read(data);
-
-        BOOST_CHECK_EQUAL(numRead, 750u);
-
-        delete iter;
-    }
-
-    bool ok = Support::compare_text_files(Support::temppath("mylog_three.txt"), Support::datapath("log_py.txt"));
-    BOOST_CHECK(ok);
-
-    if (ok)
-    {
-        FileUtils::deleteFile(Support::temppath("mylog_three.txt"));
-    }
-    
-   
-    
-    return;
-}
-
-#endif
-
-BOOST_AUTO_TEST_SUITE_END()

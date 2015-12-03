@@ -32,37 +32,30 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#ifndef PYTHONBUFFEREDINVOCATION_H
-#define PYTHONBUFFEREDINVOCATION_H
+#pragma once
 
-#include <pdal/pdal_internal.hpp>
-#ifdef PDAL_HAVE_PYTHON
+#include "../plang/Invocation.hpp"
 
-#include <pdal/plang/Invocation.hpp>
+#include <pdal/PointView.hpp>
 
 namespace pdal
 {
 namespace plang
 {
 
-
-
 class PDAL_DLL BufferedInvocation : public Invocation
 {
 public:
     BufferedInvocation(const Script& script);
 
-    void beginChunk(PointBuffer&);
-    void endChunk(PointBuffer&);
+    void begin(PointView& view, MetadataNode m);
+    void end(PointView& view, MetadataNode m);
 
 private:
+    std::vector<void *> m_buffers;
     BufferedInvocation& operator=(BufferedInvocation const& rhs); // nope
 };
 
+} // namespace plang
+} // namespace pdal
 
-}
-} // namespaces
-
-#endif
-
-#endif

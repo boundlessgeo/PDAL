@@ -34,150 +34,90 @@
 
 #include <pdal/PipelineManager.hpp>
 
-#include <pdal/Filter.hpp>
-#include <pdal/MultiFilter.hpp>
-#include <pdal/Reader.hpp>
-#include <pdal/Writer.hpp>
-#include <pdal/Utils.hpp>
-
-#include <boost/property_tree/xml_parser.hpp>
-#include <boost/optional.hpp>
-
 namespace pdal
 {
 
-PipelineManager::PipelineManager()
-    : m_lastStage(NULL)
-    , m_lastWriter(NULL)
-    , m_isWriterPipeline(false)
+Stage& PipelineManager::addReader(const std::string& type)
 {
-
-    return;
-}
-
-
-PipelineManager::~PipelineManager()
-{
-    while (m_readers.size())
+    Stage *r = m_factory.createStage(type);
+    if (!r)
     {
-        Reader* reader = m_readers.back();
-        m_readers.pop_back();
-        delete reader;
+        std::ostringstream ss;
+        ss << "Couldn't create reader stage of type '" << type << "'.";
+        throw pdal_error(ss.str());
     }
+    r->setProgressFd(m_progressFd);
+    m_stages.push_back(std::unique_ptr<Stage>(r));
+    return *r;
+}
 
-    while (m_filters.size())
+
+Stage& PipelineManager::addFilter(const std::string& type)
+{
+    Stage *stage = m_factory.createStage(type);
+    if (!stage)
     {
-        Filter* filter = m_filters.back();
-        m_filters.pop_back();
-        delete filter;
+        std::ostringstream ss;
+        ss << "Couldn't create filter stage of type '" << type << "'.";
+        throw pdal_error(ss.str());
     }
+    stage->setProgressFd(m_progressFd);
+    m_stages.push_back(std::unique_ptr<Stage>(stage));
+    return *stage;
+}
 
-    while (m_multifilters.size())
+
+Stage& PipelineManager::addWriter(const std::string& type)
+{
+    Stage *writer = m_factory.createStage(type);
+    if (!writer)
     {
-        MultiFilter* multifilter = m_multifilters.back();
-        m_multifilters.pop_back();
-        delete multifilter;
+        std::ostringstream ss;
+        ss << "Couldn't create writer stage of type '" << type << "'.";
+        throw pdal_error(ss.str());
     }
+    writer->setProgressFd(m_progressFd);
+    m_stages.push_back(std::unique_ptr<Stage>(writer));
+    return *writer;
+}
 
-    while (m_writers.size())
+
+void PipelineManager::prepare() const
+{
+    Stage *s = getStage();
+    if (s)
+       s->prepare(m_table);
+}
+
+
+point_count_t PipelineManager::execute()
+{
+    prepare();
+
+    Stage *s = getStage();
+    if (!s)
+        return 0;
+    m_viewSet = s->execute(m_table);
+    point_count_t cnt = 0;
+    for (auto pi = m_viewSet.begin(); pi != m_viewSet.end(); ++pi)
     {
-        Writer* writer = m_writers.back();
-        m_writers.pop_back();
-        delete writer;
+        PointViewPtr view = *pi;
+        cnt += view->size();
     }
-
-    return;
+    return cnt;
 }
 
-void PipelineManager::removeWriter()
+
+MetadataNode PipelineManager::getMetadata() const
 {
-    while (m_writers.size())
+    MetadataNode output("stages");
+
+    for (auto si = m_stages.begin(); si != m_stages.end(); ++si)
     {
-        Writer* writer = m_writers.back();
-        m_writers.pop_back();
-        delete writer;
+        Stage *s = si->get();
+        output.add(s->getMetadata());
     }
-
-    m_lastWriter = 0;
-}
-
-Reader* PipelineManager::addReader(const std::string& type, const Options& options)
-{
-    registerPluginIfExists(options);
-
-    Reader* stage = m_factory.createReader(type, options);
-    m_readers.push_back(stage);
-    m_lastStage = stage;
-    return stage;
-}
-
-
-Filter* PipelineManager::addFilter(const std::string& type, Stage& prevStage, const Options& options)
-{
-    registerPluginIfExists(options);
-
-    Filter* stage = m_factory.createFilter(type, prevStage, options);
-    m_filters.push_back(stage);
-    m_lastStage = stage;
-    return stage;
-}
-
-
-MultiFilter* PipelineManager::addMultiFilter(const std::string& type, const std::vector<Stage*>& prevStages, const Options& options)
-{
-    registerPluginIfExists(options);
-
-    MultiFilter* stage = m_factory.createMultiFilter(type, prevStages, options);
-    m_multifilters.push_back(stage);
-    m_lastStage = stage;
-    return stage;
-}
-
-void PipelineManager::registerPluginIfExists(const Options& options)
-{
-    if (options.hasOption("plugin"))
-    {
-        m_factory.registerPlugin(options.getValueOrThrow<std::string>("plugin"));
-    }
-}
-
-Writer* PipelineManager::addWriter(const std::string& type, Stage& prevStage, const Options& options)
-{
-    m_isWriterPipeline = true;
-
-    registerPluginIfExists(options);
-
-    Writer* writer = m_factory.createWriter(type, prevStage, options);
-    m_writers.push_back(writer);
-    m_lastWriter = writer;
-    return writer;
-}
-
-
-Writer* PipelineManager::getWriter() const
-{
-    return m_lastWriter;
-}
-
-
-Stage* PipelineManager::getStage() const
-{
-    return m_lastStage;
-}
-
-
-boost::uint64_t PipelineManager::execute()
-{
-    if (!isWriterPipeline())
-        throw pdal_error("This pipeline does not have a writer, unable to execute");
-    getWriter()->initialize();
-    return getWriter()->write(0);
-}
-
-
-bool PipelineManager::isWriterPipeline() const
-{
-    return (m_lastWriter != NULL);
+    return output;
 }
 
 } // namespace pdal

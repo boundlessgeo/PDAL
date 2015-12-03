@@ -32,88 +32,89 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#ifndef INCLUDED_PDAL_MACROS_HPP
-#define INCLUDED_PDAL_MACROS_HPP
+#pragma once
 
-#include <pdal/pdal_internal.hpp>
-//
-// macros for creating the various stage types
-//
-#define MAKE_READER_CREATOR(T, FullT) \
-    pdal::Reader* create_##T(const pdal::Options& options) \
-        { \
-            return new FullT(options); \
-        } 
-            
-#define MAKE_FILTER_CREATOR(T, FullT) \
-    pdal::Filter* create_##T(pdal::Stage& prevStage, const pdal::Options& options) \
-        { return new FullT(prevStage, options); }
-#define MAKE_MULTIFILTER_CREATOR(T, FullT) \
-    pdal::MultiFilter* create_##T(const std::vector<pdal::Stage*>& prevStages, const pdal::Options& options) \
-        { return new FullT(prevStages, options); }
-#define MAKE_WRITER_CREATOR(T, FullT) \
-    pdal::Writer* create_##T(pdal::Stage& prevStage, const pdal::Options& options) \
-        { return new FullT(prevStage, options); }
+#include <pdal/pdal_export.hpp>
+#include <pdal/plugin.hpp>
+#include <pdal/PluginManager.hpp>
 
-//
-// macros to register the stage creators
-//
-#define REGISTER_WRITER(T, FullT) \
-    registerDriverInfo<FullT>(); \
-    registerWriter(FullT::s_getName(), create_##T)
-#define REGISTER_READER(T, FullT) \
-    registerDriverInfo<FullT>(); \
-    registerReader(FullT::s_getName(), create_##T)
-#define REGISTER_FILTER(T, FullT) \
-    registerDriverInfo<FullT>(); \
-    registerFilter(FullT::s_getName(), create_##T)
-#define REGISTER_MULTIFILTER(T, FullT) \
-    registerDriverInfo<FullT>(); \
-    registerMultiFilter(FullT::s_getName(), create_##T)
+namespace {
 
-#define CREATE_READER_PLUGIN(DriverName, DriverFullType) \
-    PDAL_C_START PDAL_DLL void PDALRegister_reader_##DriverName(void* factory) \
+typedef struct PluginInfo {
+    std::string name;
+    std::string description;
+    std::string link;
+    PluginInfo(const std::string& n, const std::string& d, const std::string& l)
+      : name(n), description(d), link(l)
+    {}
+} PluginInfo;
+
+}
+
+#define CREATE_SHARED_PLUGIN(version_major, version_minor, T, type, info) \
+    extern "C" PDAL_DLL int32_t ExitFunc() \
+    { return 0; } \
+    extern "C" PDAL_DLL PF_ExitFunc PF_initPlugin() \
     { \
-        pdal::StageFactory& f = *(pdal::StageFactory*) factory; \
-        f.registerDriverInfo< DriverFullType>(); \
-        f.registerReader(DriverFullType::s_getName(), create_##DriverName##Reader); \
+        int res = 0; \
+        PF_RegisterParams rp; \
+        rp.version.major = version_major; \
+        rp.version.minor = version_minor; \
+        rp.createFunc = pdal::T::create; \
+        rp.destroyFunc = pdal::T::destroy; \
+        rp.description = info.description; \
+        rp.link = info.link; \
+        rp.pluginType = PF_PluginType_ ## type; \
+        if (!pdal::PluginManager::registerObject(info.name, &rp)) \
+            return NULL; \
+        return ExitFunc; \
     } \
-    PDAL_C_END 
-
-#define CREATE_FILTER_PLUGIN(DriverName, DriverFullType) \
-    PDAL_C_START PDAL_DLL void PDALRegister_filter_##DriverName(void* factory) \
+    void * pdal::T::create() { return new pdal::T(); } \
+    int32_t pdal::T::destroy(void *p) \
     { \
-        pdal::StageFactory& f = *(pdal::StageFactory*) factory; \
-        f.registerDriverInfo< DriverFullType>(); \
-        f.registerFilter(DriverFullType::s_getName(), create_##DriverName##Filter); \
-    } \
-    PDAL_C_END 
+        if (!p) \
+            return -1; \
+        delete (pdal::T *)p; \
+        return 0; \
+    }
 
-#define CREATE_MULTIFILTER_PLUGIN(DriverName, DriverFullType) \
-    PDAL_C_START PDAL_DLL void PDALRegister_multifilter_##DriverName(void* factory) \
+#define CREATE_STATIC_PLUGIN(version_major, version_minor, T, type, info) \
+    extern "C" PDAL_DLL int32_t T ## _ExitFunc() \
+    { return 0; } \
+    extern "C" PDAL_DLL PF_ExitFunc T ## _InitPlugin() \
     { \
-        pdal::StageFactory& f = *(pdal::StageFactory*) factory; \
-        f.registerDriverInfo< DriverFullType>(); \
-        f.registerMultiFilter(DriverFullType::s_getName(), create_##DriverName##MultiFilter); \
+        int res = 0; \
+        PF_RegisterParams rp; \
+        rp.version.major = version_major; \
+        rp.version.minor = version_minor; \
+        rp.createFunc = pdal::T::create; \
+        rp.destroyFunc = pdal::T::destroy; \
+        rp.description = info.description; \
+        rp.link = info.link; \
+        rp.pluginType = PF_PluginType_ ## type; \
+        if (!pdal::PluginManager::registerObject(info.name, &rp)) \
+            return NULL; \
+        return T ## _ExitFunc; \
     } \
-    PDAL_C_END 
-
-#define CREATE_WRITER_PLUGIN(DriverName, DriverFullType) \
-    PDAL_C_START PDAL_DLL void PDALRegister_writer_##DriverName(void* factory) \
+    void * pdal::T::create() { return new pdal::T(); } \
+    int32_t pdal::T::destroy(void *p) \
     { \
-        pdal::StageFactory& f = *(pdal::StageFactory*) factory; \
-        f.registerDriverInfo< DriverFullType>(); \
-        f.registerWriter(DriverFullType::s_getName(), create_##DriverName##Writer); \
-    } \
-    PDAL_C_END 
+        if (!p) \
+            return -1; \
+        delete (pdal::T *)p; \
+        return 0; \
+    }
 
-#define SET_PLUGIN_VERSION(DriverName) \
-    PDAL_C_START PDAL_DLL int PDALRegister_version_##DriverName() \
-    { \
-        return PDAL_PLUGIN_VERSION; \
-    } \
-    PDAL_C_END 
+#ifdef _WIN32
+inline long lround(double d)
+{
+    long l;
 
-
+    if (d < 0)
+        l = (long)ceil(d - .5);
+    else
+        l = (long)floor(d + .5);
+    return l;
+}
 #endif
 

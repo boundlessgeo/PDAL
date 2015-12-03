@@ -32,20 +32,13 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#ifndef INCLUDED_LOG_HPP
-#define INCLUDED_LOG_HPP
+#pragma once
 
 #include <pdal/pdal_internal.hpp>
 
-#include <boost/iostreams/stream.hpp>
-#include <boost/iostreams/device/null.hpp>
-#include <boost/shared_ptr.hpp>
-#include <pdal/FileUtils.hpp>
+#include <pdal/util/FileUtils.hpp>
 #include <iosfwd>
-
-typedef boost::iostreams::null_sink sink;
-typedef boost::iostreams::stream<sink> null_stream;
-
+#include <memory>
 
 // Adapted from http://drdobbs.com/cpp/201804215
 
@@ -53,14 +46,12 @@ namespace pdal
 {
 
 
-/// pdal::Log is a logging object that is provided by pdal::StageBase to
+/// pdal::Log is a logging object that is provided by pdal::Stage to
 /// facilitate logging operations.
 class PDAL_DLL Log
 {
 public:
 
-    /** @name Constructors
-    */
     /// Constructs a pdal::Log instance.
     /// @param leaderString A string to presage all log entries with
     /// @param outputName A filename or one of 'stdout', 'stdlog', or 'stderr'
@@ -82,20 +73,25 @@ public:
     /** @name Logging level
     */
     /// @return the logging level of the pdal::Log instance
-    LogLevel getLevel()
+    LogLevel::Enum getLevel()
     {
         return m_level;
     }
 
     /// Sets the logging level of the pdal::Log instance
     /// @param v logging level to use for get() comparison operations
-    void setLevel(LogLevel v)
+    void setLevel(LogLevel::Enum v)
     {
         m_level = v;
     }
 
+    /// Set the leader string.
+    /// \param[in]  leader  Leader string.
+    void setLeader(const std::string& leader)
+        { m_leader = leader; }
+
     /// @return A string representing the LogLevel
-    std::string getLevelString(LogLevel v) const;
+    std::string getLevelString(LogLevel::Enum v) const;
 
     /** @name Log stream operations
     */
@@ -110,8 +106,7 @@ public:
     /// @param level logging level to request
     /// If the logging level asked for with
     /// pdal::Log::get is less than the logging level of the pdal::Log instance
-    /// an ostream with a boost::iostreams::null_sink is returned.
-    std::ostream& get(LogLevel level = logINFO);
+    std::ostream& get(LogLevel::Enum level = LogLevel::Info);
 
     /// Sets the floating point precision
     void floatPrecision(int level);
@@ -119,25 +114,22 @@ public:
     /// Clears the floating point precision settings of the streams
     void clearFloat();
 
-    /** @name private attributes
-    */
-
 protected:
-    std::ostream* m_log;
-    null_stream m_null_stream;
+    std::ostream *m_log;
+    std::ostream *m_nullStream;
 
 private:
     Log(const Log&);
     Log& operator =(const Log&);
 
-    LogLevel m_level;
+    void makeNullStream();
+
+    LogLevel::Enum m_level;
     bool m_deleteStreamOnCleanup;
     std::string m_leader;
 };
 
-typedef boost::shared_ptr<Log> LogPtr;
-
+typedef std::shared_ptr<Log> LogPtr;
 
 } // namespace pdal
 
-#endif

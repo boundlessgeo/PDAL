@@ -1,5 +1,4 @@
 /******************************************************************************
-* Copyright (c) 2011, Michael P. Gerlek (mpg@flaxen.com)
 *
 * All rights reserved.
 *
@@ -33,11 +32,10 @@
 ****************************************************************************/
 
 #include <pdal/Options.hpp>
+#include <pdal/PDALUtils.hpp>
 
 #include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/xml_parser.hpp>
 #include <boost/property_tree/json_parser.hpp>
-#include <boost/concept_check.hpp> // ignore_unused_variable_warning
 #include <boost/optional.hpp>
 #include <boost/foreach.hpp>
 #include <boost/algorithm/string.hpp>
@@ -50,43 +48,21 @@
 namespace pdal
 {
 
-//---------------------------------------------------------------------------
-
-
 Option::Option(const boost::property_tree::ptree& tree)
-    : m_name("")
-    , m_value("")
-    , m_description("")
 {
     using namespace boost::property_tree;
 
     m_name = tree.get<std::string>("Name");
     m_value = tree.get<std::string>("Value");
-    m_description = tree.count("Description") ? tree.get<std::string>("Description") : "";
+    m_description =
+    tree.count("Description") ? tree.get<std::string>("Description") : "";
 
     boost::property_tree::ptree opts;
     ptree const& options = tree.get_child("Options", opts);
     if (options.size())
         m_options = options::OptionsPtr(new Options(options));
-    return;
 }
 
-
-boost::property_tree::ptree Option::toPTree() const
-{
-    boost::property_tree::ptree t;
-    t.put("Name", getName());
-    t.put("Value", getValue<std::string>());
-    if (getDescription() != "")
-    {
-        t.put("Description", getDescription());
-    }
-    if (m_options.get())
-    {
-        t.add_child("Options", m_options->toPTree());
-    }
-    return t;
-}
 
 boost::optional<Options const&> Option::getOptions() const
 {
@@ -98,29 +74,10 @@ boost::optional<Options const&> Option::getOptions() const
 
 void Option::setOptions(Options const& options)
 {
-    options::OptionsPtr p = options::OptionsPtr(new Options(options));
-    m_options = p;
+    m_options = options::OptionsPtr(new Options(options));
 }
 
 #if !defined(PDAL_COMPILER_MSVC)
-// explicit specialization:
-//   boost::lexical_cast only understands "0" and "1" for bools,
-//   so we handle those situations explicitly
-template<> bool Option::getValue() const
-{
-    if (m_value=="true") return true;
-    if (m_value=="false") return false;
-    return boost::lexical_cast<bool>(m_value);
-}
-
-
-// explicit specialization:
-//   if we want to get out a (const ref) string, we don't need lexical_cast
-template<> const std::string& Option::getValue() const
-{
-    return m_value;
-}
-
 
 // explicit specialization:
 //   if insert a bool, we don't want it to be "0" or "1" (which is
@@ -130,7 +87,6 @@ template<> void Option::setValue(const bool& value)
     m_value = value ? "true" : "false";
 }
 
-
 // explicit specialization:
 //   if we want to insert a string, we don't need lexical_cast
 template<> void Option::setValue(const std::string& value)
@@ -139,97 +95,104 @@ template<> void Option::setValue(const std::string& value)
 }
 #endif
 
+bool Option::empty() const
+{
+    if (m_options)
+        return m_options->empty();
+    else
+        return false;
+}
+
+void Option::toMetadata(MetadataNode& parent) const
+{
+    MetadataNode child = parent.add(getName());
+    child.add("value", getValue<std::string>());
+    child.add("description", getDescription());
+
+    auto opts = getOptions();
+    if (opts)
+        opts->toMetadata(child);
+}
+
 //---------------------------------------------------------------------------
 
 
 Options::Options(const Options& rhs)
     : m_options(rhs.m_options)
-{
-    return;
-}
+{}
 
 
 Options::Options(const Option& opt)
 {
     add(opt);
-    return;
 }
 
 
 Options::Options(const boost::property_tree::ptree& tree)
 {
-    for (boost::property_tree::ptree::const_iterator iter = tree.begin();
-            iter != tree.end();
-            ++iter)
+    for (auto iter = tree.begin(); iter != tree.end(); ++iter)
     {
         assert(iter->first == "Option");
         Option opt(iter->second);
         add(opt);
     }
-
-    return;
 }
 
 
 void Options::add(const Option& option)
 {
     m_options.insert(std::pair<std::string, Option>(option.getName(), option));
-    // m_options[option.getName()] = option;
 }
 
 
 Option& Options::getOptionByRef(const std::string& name)
 {
-    options::map_t::iterator iter = m_options.find(name);
+    auto iter = m_options.find(name);
     if (iter == m_options.end())
     {
         std::ostringstream oss;
-        oss << "Options::getOptionByRef: Required option '" << name << "' was not found on this stage";
-        throw option_not_found(oss.str());
+        oss << "Options::getOptionByRef: Required option '" << name <<
+            "' was not found on this stage";
+        throw Option::not_found(oss.str());
     }
-    Option& option = iter->second;
-    return option;
+    return iter->second;
 }
 
 
 const Option& Options::getOption(const std::string& name) const
 {
-    options::map_t::const_iterator iter = m_options.find(name);
+    auto iter = m_options.find(name);
     if (iter == m_options.end())
     {
         std::ostringstream oss;
-        oss << "Options::getOption: Required option '" << name << "' was not found on this stage";
-        throw option_not_found(oss.str());
+        oss << "Options::getOption: Required option '" << name <<
+            "' was not found on this stage";
+        throw Option::not_found(oss.str());
     }
-    const Option& option = iter->second;
-    return option;
+    return iter->second;
 }
 
 std::vector<Option> Options::getOptions(std::string const& name) const
 {
-    std::pair<std::multimap<std::string,Option>::const_iterator,std::multimap<std::string,Option>::const_iterator> ret;
     std::vector<Option> output;
 
     // If we have an empty name, return them all
     if (boost::iequals(name, ""))
     {
-        std::multimap<std::string, Option>::const_iterator it;
-        for (it = m_options.begin(); it != m_options.end(); ++it)
+        for (auto it = m_options.begin(); it != m_options.end(); ++it)
         {
-            output.push_back((*it).second);
+            output.push_back(it->second);
         }
     }
     else
     {
-        ret = m_options.equal_range(name);
-        std::multimap<std::string, Option>::const_iterator it;
-        for (it = ret.first; it != ret.second; ++it)
+        auto ret = m_options.equal_range(name);
+        for (auto it = ret.first; it != ret.second; ++it)
         {
-            output.push_back((*it).second);
+            output.push_back(it->second);
         }
     }
     return output;
-
 }
 
 // the empty options set
@@ -242,35 +205,14 @@ const Options& Options::none()
 
 bool Options::hasOption(std::string const& name) const
 {
-    bool ok = false;
-
     try
     {
         (void)getOption(name);
-        ok = true;
+        return true;
     }
-    catch (option_not_found&)
-    {
-        ok = false;
-    }
-    // any other exception will bubble up
-
-    return ok;
-}
-
-
-boost::property_tree::ptree Options::toPTree() const
-{
-    boost::property_tree::ptree tree;
-
-    for (options::map_t::const_iterator citer = m_options.begin(); citer != m_options.end(); ++citer)
-    {
-        const Option& option = citer->second;
-        boost::property_tree::ptree subtree = option.toPTree();
-        tree.add_child("Option", subtree);
-    }
-
-    return tree;
+    catch (Option::not_found)
+    {}
+    return false;
 }
 
 
@@ -282,7 +224,7 @@ void Options::dump() const
 
 std::ostream& operator<<(std::ostream& ostr, const Options& options)
 {
-    const boost::property_tree::ptree tree = options.toPTree();
+    const boost::property_tree::ptree tree = pdal::Utils::toPTree(options);
 
     boost::property_tree::write_json(ostr, tree);
 

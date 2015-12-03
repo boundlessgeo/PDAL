@@ -32,18 +32,24 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#ifndef INCLUDED_XMLSCHEMA_HPP
-#define INCLUDED_XMLSCHEMA_HPP
+#pragma once
 
 #include <pdal/pdal_internal.hpp>
-#include <pdal/Schema.hpp>
+
+#define PDAL_XML_SCHEMA_VERSION "1.3"
+
+#ifndef PDAL_HAVE_LIBXML2
+#error "Including XMLSchema.hpp without libxml2 - build problem."
+#endif
+
+#include <pdal/Dimension.hpp>
 #include <pdal/Metadata.hpp>
+#include <pdal/PointLayout.hpp>
 
 #include <string>
 #include <stdarg.h>
-#include <functional>
+#include <vector>
 
-#ifdef PDAL_HAVE_LIBXML2
 #include <libxml/parser.h>
 #include <libxml/xmlschemas.h>
 
@@ -53,159 +59,86 @@
 #include <libxml/xmlIO.h>
 #include <libxml/encoding.h>
 #include <libxml/xmlwriter.h>
-#endif
-
-#include <boost/shared_ptr.hpp>
-#include <boost/concept_check.hpp>
-#include <boost/function.hpp>
 
 namespace pdal
 {
-namespace schema
-{
-
-#ifdef PDAL_HAVE_LIBXML2
 
 void OCISchemaGenericErrorHandler(void * ctx, const char* message, ...);
 void OCISchemaStructuredErrorHandler(void * userData, xmlErrorPtr error);
-#endif
 
-class schema_error : public pdal_error
+class XMLSchema;
+
+struct XMLDim
 {
+    friend class XMLSchema;
+
 public:
-    schema_error(std::string const& msg)
-        : pdal_error(msg)
+    XMLDim() : m_min(0.0), m_max(0.0)
     {}
-};
-
-class schema_loading_error : public schema_error
-{
-public:
-    schema_loading_error(std::string const& msg)
-        : schema_error(msg)
+    XMLDim(const DimType& dim, const std::string& name) :
+        m_name(name), m_min(0.0), m_max(0.0), m_dimType(dim)
     {}
-};
 
-class schema_writing_error : public schema_error
+    std::string m_name;
+    std::string m_description;
+    uint32_t m_position;
+    double m_min;
+    double m_max;
+    DimType m_dimType;
+};
+typedef std::vector<XMLDim> XMLDimList;
+inline bool operator < (const XMLDim& d1, const XMLDim& d2)
+    { return d1.m_position < d2.m_position; }
+
+class PDAL_DLL XMLSchema
 {
 public:
-    schema_writing_error(std::string const& msg)
-        : schema_error(msg)
+    XMLSchema(std::string xml, std::string xsd = "",
+        Orientation::Enum orientation = Orientation::PointMajor);
+    XMLSchema(const XMLDimList& dims, MetadataNode m = MetadataNode(),
+        Orientation::Enum orientation = Orientation::PointMajor);
+    XMLSchema(const PointLayoutPtr& pointTable, MetadataNode m = MetadataNode(),
+        Orientation::Enum orientation = Orientation::PointMajor);
+    XMLSchema() : m_orientation(Orientation::PointMajor)
     {}
-};
 
+    ~XMLSchema()
+        { xmlCleanupParser(); }
 
-class schema_validation_error : public schema_error
-{
-public:
-    schema_validation_error(std::string const& msg)
-        : schema_error(msg)
-    {}
-};
+    std::string xml() const;
+    DimTypeList dimTypes() const;
+    XMLDimList xmlDims() const
+        { return m_dims; }
 
-class schema_parsing_error : public schema_error
-{
-public:
-    schema_parsing_error(std::string const& msg)
-        : schema_error(msg)
-    {}
-};
-
-class schema_generic_error : public schema_error
-{
-public:
-    schema_generic_error(std::string const& msg)
-        : schema_error(msg)
-    {}
-};
-
-
-// We're going to put all of our libxml2 primatives into shared_ptrs
-// that have custom deleters that clean up after themselves so we
-// have a good chance at having clean exception-safe code
-typedef boost::shared_ptr<void> DocPtr;
-typedef boost::shared_ptr<void> SchemaParserCtxtPtr;
-typedef boost::shared_ptr<void> SchemaPtr;
-typedef boost::shared_ptr<void> SchemaValidCtxtPtr;
-typedef boost::shared_ptr<void> TextWriterPtr;
-typedef boost::shared_ptr<void> BufferPtr;
-typedef boost::shared_ptr<void> CharPtr;
-
-class PDAL_DLL Reader
-{
-public:
-    Reader(std::string const& xml, std::string const& xmlschema);
-    Reader(std::istream* xml, std::istream* schema);
-    ~Reader();
-
-    inline pdal::Schema const& getSchema()
-    {
-        return m_schema;
-    }
-
-
-protected:
-
-    void Initialize();
-    void Load();
+    MetadataNode getMetadata() const
+        { return m_metadata;}
+    void setId(const std::string& name, Dimension::Id::Enum id)
+        { xmlDim(name).m_dimType.m_id = id; }
+    void setXForm(Dimension::Id::Enum id, XForm xform)
+        { xmlDim(id).m_dimType.m_xform = xform; }
+    XForm xForm(Dimension::Id::Enum id) const
+        { return xmlDim(id).m_dimType.m_xform; }
+    void setOrientation(Orientation::Enum orientation)
+        { m_orientation = orientation; }
+    Orientation::Enum orientation() const
+        { return m_orientation; }
 
 private:
-
-    Reader& operator=(const Reader&); // not implemented
-    Reader(const Reader&); // not implemented;
-    pdal::Metadata LoadMetadata(xmlNode* node);
-    
-
-    std::string remapOldNames(std::string const& input);
-
-#ifdef PDAL_HAVE_LIBXML2
-    DocPtr m_doc;
-    DocPtr m_schema_doc;
-
-    SchemaParserCtxtPtr m_schema_parser_ctx;
-    SchemaPtr m_schema_ptr;
-    SchemaValidCtxtPtr m_schema_valid_ctx;
-
-    xmlParserOption m_doc_options;
-#endif
-
+    Orientation::Enum m_orientation;
+    XMLDimList m_dims;
     void* m_global_context;
+    MetadataNode m_metadata;
 
-    pdal::Schema m_schema;
-
-    std::string m_xml;
-    std::string m_xsd;
-
-    boost::uint32_t m_field_position;
+    XMLDim& xmlDim(Dimension::Id::Enum id);
+    const XMLDim& xmlDim(Dimension::Id::Enum id) const;
+    XMLDim& xmlDim(const std::string& name);
+    xmlDocPtr init(const std::string& xml, const std::string& xsd);
+    bool validate(xmlDocPtr doc, const std::string& xsd);
+    std::string remapOldNames(const std::string& input);
+    bool loadMetadata(xmlNode *startNode, MetadataNode& input);
+    bool load(xmlDocPtr doc);
+    void writeXml(xmlTextWriterPtr w) const;
 };
 
+} // namespace pdal
 
-class PDAL_DLL Writer
-{
-public:
-    Writer(pdal::Schema const& schema);
-    ~Writer() {}
-    
-    void setMetadata(boost::property_tree::ptree const& tree) { m_metadata = tree; }
-    std::string getXML();
-protected:
-private:
-
-    Writer& operator=(const Writer&); // not implemented
-    Writer(const Writer&); // not implemented;
-    void write(TextWriterPtr w);
-    void writeSchema(TextWriterPtr w);
-    void* m_global_context;
-    pdal::Schema const& m_schema;
-    boost::property_tree::ptree m_metadata;
-
-
-
-};
-
-
-
-}
-} // namespaces
-
-#endif

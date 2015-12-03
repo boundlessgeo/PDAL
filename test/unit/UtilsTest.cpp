@@ -32,20 +32,17 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
+#include <pdal/pdal_test_main.hpp>
+
 #include <sstream>
 
-#include <boost/test/unit_test.hpp>
-#include <boost/cstdint.hpp>
-
-#include <pdal/Range.hpp>
+#include <pdal/util/Utils.hpp>
 
 #include <vector>
 
 using namespace pdal;
 
-BOOST_AUTO_TEST_SUITE(UtilsTest)
-
-BOOST_AUTO_TEST_CASE(test_random)
+TEST(UtilsTest, test_random)
 {
     const double rangeMin = 0.0;
     const double rangeMax = 100.0;
@@ -59,131 +56,276 @@ BOOST_AUTO_TEST_CASE(test_random)
     for (int i=0; i<iters; i++)
     {
         const double x = Utils::random(rangeMin, rangeMax);
-        BOOST_CHECK(x >= rangeMin);
-        BOOST_CHECK(x <= rangeMax);
+        EXPECT_TRUE(x >= rangeMin);
+        EXPECT_TRUE(x <= rangeMax);
 
         sum += x;
     }
 
     sum = sum / iters;
 
-    BOOST_CHECK(sum <= avg + 0.1*avg);
-    BOOST_CHECK(sum >= avg - 0.1*avg);
+    EXPECT_TRUE(sum <= avg + 0.1*avg);
+    EXPECT_TRUE(sum >= avg - 0.1*avg);
 }
 
 
-BOOST_AUTO_TEST_CASE(test_comparators)
+TEST(UtilsTest, test_comparators)
 {
     bool ok;
 
     {
         ok = Utils::compare_distance<float>(1.000001f, 1.0f);
-        BOOST_CHECK(!ok);
+        EXPECT_TRUE(!ok);
 
         ok = Utils::compare_distance<float>(1.0000001f, 1.0f);
-        BOOST_CHECK(ok);
+        EXPECT_TRUE(ok);
 
         ok = Utils::compare_distance<float>(1.00000001f, 1.0f);
-        BOOST_CHECK(ok);
+        EXPECT_TRUE(ok);
     }
 
     {
         ok = Utils::compare_approx<float>(1.001f, 1.0f, 0.0001f);
-        BOOST_CHECK(!ok);
+        EXPECT_TRUE(!ok);
 
         ok = Utils::compare_approx<float>(1.001f, 1.0f, 0.001f);
-        BOOST_CHECK(!ok);
+        EXPECT_TRUE(!ok);
 
         ok = Utils::compare_approx<float>(1.001f, 1.0f, 0.01f);
-        BOOST_CHECK(ok);
+        EXPECT_TRUE(ok);
 
         ok = Utils::compare_approx<float>(1.001f, 1.0f, 0.1f);
-        BOOST_CHECK(ok);
+        EXPECT_TRUE(ok);
     }
 
     {
         ok = Utils::compare_approx<unsigned int>(10, 12, 2);
-        BOOST_CHECK(ok);
+        EXPECT_TRUE(ok);
 
         ok = Utils::compare_approx<unsigned int>(10, 12, 3);
-        BOOST_CHECK(ok);
+        EXPECT_TRUE(ok);
 
         ok = Utils::compare_approx<unsigned int>(10, 12, 1);
-        BOOST_CHECK(!ok);
+        EXPECT_TRUE(!ok);
     }
 }
 
 
-BOOST_AUTO_TEST_CASE(test_buffer_read_write)
+TEST(UtilsTest, test_base64)
 {
-    const char buf[] = "quick brown fox";
-    std::string bufstr(buf);
+    std::vector<uint8_t> data;
+    for (int i=0; i<2; i++) data.push_back((uint8_t)i);
 
-    std::ostringstream ostr;
-    Utils::write_n(ostr, buf, 15);
-
-    BOOST_CHECK(memcmp(buf, ostr.str().c_str(), 15) == 0);
-
-    std::istringstream istr;
-    istr.str(bufstr);
-    boost::uint8_t tmp[30];
-    Utils::read_n(tmp, istr, 15);
-    BOOST_CHECK(memcmp(buf, tmp, 15) == 0);
-
-    return;
-}
-
-
-BOOST_AUTO_TEST_CASE(test_field_read_write)
-{
-    boost::uint8_t buffer[100];
-    boost::uint8_t* p = buffer;
-
-    boost::uint8_t one = 1;
-    double two = 2.0;
-
-    Utils::write_field<boost::uint8_t>(p, one);
-    Utils::write_field<double>(p, two);
-
-    p = buffer;
-
-    boost::uint8_t x = Utils::read_field<boost::uint8_t>(p);
-    double y = Utils::read_field<double>(p);
-
-    BOOST_CHECK(x==one);
-    BOOST_CHECK(Utils::compare_approx(y, two, std::numeric_limits<double>::min()) == true);
-
-    return;
-}
-
-
-BOOST_AUTO_TEST_CASE(test_base64)
-{
-    std::vector<boost::uint8_t> data;
-    for (int i=0; i<2; i++) data.push_back((boost::uint8_t)i);
-
-    boost::uint32_t begin_size(0);
-    for (std::vector<boost::uint8_t>::size_type i = 0; i < data.size(); ++i)
+    uint32_t begin_size(0);
+    for (std::vector<uint8_t>::size_type i = 0; i < data.size(); ++i)
     {
         begin_size = begin_size + data[i];
     }
 
     std::string encoded = Utils::base64_encode(data);
-    std::vector<boost::uint8_t> decoded = Utils::base64_decode(encoded);
+    std::vector<uint8_t> decoded = Utils::base64_decode(encoded);
 
-    boost::uint32_t size(0);
-    for (std::vector<boost::uint8_t>::size_type i = 0; i < decoded.size(); ++i)
+    uint32_t size(0);
+    for (std::vector<uint8_t>::size_type i = 0; i < decoded.size(); ++i)
     {
         size = size + decoded[i];
     }
 
-    BOOST_CHECK_EQUAL(decoded.size(), data.size());
-    BOOST_CHECK_EQUAL(size, begin_size);
-
-
-    return;
+    EXPECT_EQ(decoded.size(), data.size());
+    EXPECT_EQ(size, begin_size);
 }
 
+TEST(UtilsTest, blanks)
+{
+    std::string base("This is a test");
+    std::string trail("This is a test   ");
+    std::string lead("  This is a test");
+    std::string both("  This is a test    ");
+    std::string empty;
 
+    std::string s = "This is a test  \t  ";
+    Utils::trimTrailing(s);
+    EXPECT_EQ(s, base);
+    s = "";
+    Utils::trimTrailing(s);
+    EXPECT_EQ(s, empty);
+    s = "  \t\t  ";
+    Utils::trimTrailing(s);
+    EXPECT_EQ(s, empty);
+    s = base;
+    Utils::trimTrailing(s);
+    EXPECT_EQ(s, base);
+    s = "  \t This is a test";
+    Utils::trimLeading(s);
+    EXPECT_EQ(s, base);
+    s = "  \t  \t  ";
+    Utils::trimLeading(s);
+    EXPECT_EQ(s, empty);
+    s = "";
+    Utils::trimLeading(s);
+    EXPECT_EQ(s, empty);
+    s = base;
+    Utils::trimLeading(s);
+    EXPECT_EQ(s, base);
+}
 
-BOOST_AUTO_TEST_SUITE_END()
+TEST(UtilsTest, split)
+{
+    std::vector<std::string> result;
+
+    std::string input("This is a test");
+    auto pred = [](char c)
+        { return c == ' '; };
+
+    result = Utils::split(input, pred);
+    EXPECT_EQ(result.size(), 4U);
+    EXPECT_EQ(result[0], "This");
+    EXPECT_EQ(result[1], "is");
+    EXPECT_EQ(result[2], "a");
+    EXPECT_EQ(result[3], "test");
+
+    input = "  This  is a test  ";
+
+    result = Utils::split(input, pred);
+    EXPECT_EQ(result.size(), 9U);
+    EXPECT_EQ(result[0], "");
+    EXPECT_EQ(result[1], "");
+    EXPECT_EQ(result[2], "This");
+    EXPECT_EQ(result[3], "");
+    EXPECT_EQ(result[4], "is");
+    EXPECT_EQ(result[5], "a");
+    EXPECT_EQ(result[6], "test");
+    EXPECT_EQ(result[7], "");
+    EXPECT_EQ(result[8], "");
+}
+
+TEST(UtilsTest, splitChar)
+{
+    std::vector<std::string> result;
+
+    std::string input("This is a test");
+
+    result = Utils::split(input, ' ');
+    EXPECT_EQ(result.size(), 4U);
+    EXPECT_EQ(result[0], "This");
+    EXPECT_EQ(result[1], "is");
+    EXPECT_EQ(result[2], "a");
+    EXPECT_EQ(result[3], "test");
+
+    input = "  This  is a test  ";
+
+    result = Utils::split(input, ' ');
+    EXPECT_EQ(result.size(), 9U);
+    EXPECT_EQ(result[0], "");
+    EXPECT_EQ(result[1], "");
+    EXPECT_EQ(result[2], "This");
+    EXPECT_EQ(result[3], "");
+    EXPECT_EQ(result[4], "is");
+    EXPECT_EQ(result[5], "a");
+    EXPECT_EQ(result[6], "test");
+    EXPECT_EQ(result[7], "");
+    EXPECT_EQ(result[8], "");
+}
+
+TEST(UtilsTest, split2)
+{
+    std::vector<std::string> result;
+
+    std::string input("This is a test");
+    auto pred = [](char c)
+        { return c == ' '; };
+
+    result = Utils::split2(input, pred);
+    EXPECT_EQ(result.size(), 4U);
+    EXPECT_EQ(result[0], "This");
+    EXPECT_EQ(result[1], "is");
+    EXPECT_EQ(result[2], "a");
+    EXPECT_EQ(result[3], "test");
+
+    input = "  This  is a test  ";
+
+    result = Utils::split2(input, pred);
+    EXPECT_EQ(result.size(), 4U);
+    EXPECT_EQ(result[0], "This");
+    EXPECT_EQ(result[1], "is");
+    EXPECT_EQ(result[2], "a");
+    EXPECT_EQ(result[3], "test");
+
+    auto pred2 = [](char c)
+        { return c == ' ' || c == ','; };
+
+    input = " , This,is ,a test , ";
+
+    result = Utils::split2(input, pred2);
+    EXPECT_EQ(result.size(), 4U);
+    EXPECT_EQ(result[0], "This");
+    EXPECT_EQ(result[1], "is");
+    EXPECT_EQ(result[2], "a");
+    EXPECT_EQ(result[3], "test");
+}
+
+TEST(UtilsTest, split2Char)
+{
+    std::vector<std::string> result;
+
+    std::string input(",,This,is,,a,test,,,");
+
+    result = Utils::split2(input, ',');
+    EXPECT_EQ(result.size(), 4U);
+    EXPECT_EQ(result[0], "This");
+    EXPECT_EQ(result[1], "is");
+    EXPECT_EQ(result[2], "a");
+    EXPECT_EQ(result[3], "test");
+}
+
+TEST(UtilsTest, case)
+{
+    std::string s("This is a test");
+    
+    EXPECT_EQ("THIS IS A TEST", Utils::toupper(s));
+    EXPECT_EQ("this is a test", Utils::tolower(s));
+
+    s = "FOOBARBAZ";
+
+    EXPECT_EQ("FOOBARBAZ", Utils::toupper(s));
+    EXPECT_EQ("foobarbaz", Utils::tolower(s));
+
+    s = "foo!bar.baz";
+    EXPECT_EQ("FOO!BAR.BAZ", Utils::toupper(s));
+    EXPECT_EQ(s, Utils::tolower(s));
+}
+
+TEST(UtilsTest, starts)
+{
+    std::string s("reference 1");
+
+    EXPECT_TRUE(Utils::startsWith(s, "ref"));
+    EXPECT_TRUE(Utils::startsWith(s, s));
+    EXPECT_FALSE(Utils::startsWith(s, "reference 123"));
+    EXPECT_FALSE(Utils::startsWith(s, "rawference 123"));
+    EXPECT_TRUE(Utils::startsWith(s, ""));
+}
+
+TEST(UtilsTest, iequals)
+{
+    EXPECT_TRUE(Utils::iequals("", ""));
+    EXPECT_TRUE(Utils::iequals("Foobar", "foobar"));
+    EXPECT_TRUE(Utils::iequals("FOO.BAR~", "foo.Bar~"));
+    EXPECT_FALSE(Utils::iequals("Foobar", "foobarbaz"));
+    EXPECT_FALSE(Utils::iequals("Foobar", "foobat"));
+}
+
+TEST(UtilsTest, replaceAll)
+{
+    std::string s(" This  is a   test ");
+    EXPECT_EQ(Utils::replaceAll(s, " ", "  "), "  This    is  a      test  ");
+    EXPECT_EQ(Utils::replaceAll(s, "  ", " "), " This is a  test ");
+    EXPECT_EQ(Utils::replaceAll(s, " ", "\""), "\"This\"\"is\"a\"\"\"test\"");
+}
+
+TEST(UtilsTest, escapeNonprinting)
+{
+    std::string s("CTRL-N,A,B,R,V: \n\a\b\r\v\x12\xe\x01");
+    std::string out = Utils::escapeNonprinting(s);
+    EXPECT_EQ(out, "CTRL-N,A,B,R,V: \\n\\a\\b\\r\\v\\x12\\x0e\\x01");
+}

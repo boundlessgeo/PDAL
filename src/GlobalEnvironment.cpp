@@ -32,186 +32,75 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
+#include <mutex>
+
+//#include <boost/date_time/posix_time/posix_time_types.hpp>
+
 #include <pdal/GlobalEnvironment.hpp>
-
-#ifdef PDAL_HAVE_PYTHON
-#include <pdal/plang/PythonEnvironment.hpp>
-#endif
-
-#ifdef PDAL_HAVE_GDAL
 #include <pdal/GDALUtils.hpp>
-#endif
 
 namespace pdal
 {
 
-
-//
-// static functions
-//
-
-static GlobalEnvironment* t = 0;
-static boost::once_flag flag = BOOST_ONCE_INIT;
+static GlobalEnvironment* s_environment = 0;
 
 GlobalEnvironment& GlobalEnvironment::get()
 {
-    boost::call_once(init, flag);
-    return *t;
+    static std::once_flag flag;
+
+    auto init = []()
+    {
+        s_environment = new GlobalEnvironment();
+    };
+
+    std::call_once(flag, init);
+    return *s_environment;
 }
 
 
 void GlobalEnvironment::startup()
 {
-    if (t != 0) // sanity check
-    {
+    if (s_environment)
         throw pdal_error("attempt to reinitialize global environment");
-    }
-
     get();
 }
 
 
 void GlobalEnvironment::shutdown()
 {
-    if (t == 0) // sanity check
-    {
-        throw pdal_error("bad global shutdown call -- was called more than once or was called without corresponding startup");
-    }
-
-    delete t;
-    t = 0;
-
-    return;
+    if (!s_environment)
+        throw pdal_error("bad global shutdown call -- was called more "
+            "than once or was called without corresponding startup");
+    delete s_environment;
+    s_environment = 0;
 }
 
 
-void GlobalEnvironment::init()
-{
-    t = new GlobalEnvironment();
-}
+GlobalEnvironment::GlobalEnvironment() : m_gdalDebug()
+{}
 
-
-//
-// regular member functions
-//
-
-GlobalEnvironment::GlobalEnvironment()
-    : m_pythonEnvironment(0)
-    , m_bIsGDALInitialized(false)
-    , m_gdal_debug(0)
-{
-    // this should be the not-a-thread thread environment
-    (void) createThreadEnvironment(boost::thread::id());
-
-    return;
-}
-
-
-
-void GlobalEnvironment::getGDALEnvironment()
-{
-#ifdef PDAL_HAVE_GDAL
-    if (!m_bIsGDALInitialized)
-    {
-        (void) GDALAllRegister();
-        m_bIsGDALInitialized = true;
-    }
-#endif
-}
 
 GlobalEnvironment::~GlobalEnvironment()
 {
-    while (m_threadMap.size())
+    if (m_gdalDebug)
+        GDALDestroyDriverManager();
+}
+
+
+void GlobalEnvironment::initializeGDAL(LogPtr log, bool gdalDebugOutput)
+{
+    static std::once_flag flag;
+
+    auto init = [this](LogPtr log, bool gdalDebugOutput) -> void
     {
-        thread_map::iterator iter = m_threadMap.begin();
-        ThreadEnvironment* env = iter->second;
-        delete env;
-        m_threadMap.erase(iter);
-    }
+        GDALAllRegister();
+        OGRRegisterAll();
+        m_gdalDebug.reset(new gdal::ErrorHandler(gdalDebugOutput, log));
+    };
 
-#ifdef PDAL_HAVE_PYTHON
-    if (m_pythonEnvironment)
-        delete m_pythonEnvironment;
-    m_pythonEnvironment = 0;
-#endif
-
-#ifdef PDAL_HAVE_GDAL
-    if (m_bIsGDALInitialized)
-    {
-        if (m_gdal_debug)
-            delete m_gdal_debug;
-
-        (void) GDALDestroyDriverManager();
-        m_bIsGDALInitialized = false;
-    }
-#endif
-
-    return;
+    std::call_once(flag, init, log, gdalDebugOutput);
 }
 
-#ifdef PDAL_HAVE_PYTHON
-void GlobalEnvironment::createPythonEnvironment()
-{
-    m_pythonEnvironment = new pdal::plang::PythonEnvironment();
-}
-#endif
-
-void GlobalEnvironment::createThreadEnvironment(boost::thread::id id)
-{
-    ThreadEnvironment* threadEnv = new ThreadEnvironment(id);
-
-    if (m_threadMap.find(id) != m_threadMap.end())
-    {
-        throw pdal_error("thread already registered");
-    }
-
-    m_threadMap.insert(std::make_pair(id, threadEnv));
-}
-
-
-ThreadEnvironment& GlobalEnvironment::getThreadEnvironment(boost::thread::id id)
-{
-    thread_map::iterator iter =  m_threadMap.find(id);
-    if (iter == m_threadMap.end())
-        throw pdal_error("bad thread id!");
-
-    ThreadEnvironment* threadEnv = iter->second;
-
-    return *threadEnv;
-}
-
-
-plang::PythonEnvironment& GlobalEnvironment::getPythonEnvironment()
-{
-#ifdef PDAL_HAVE_PYTHON
-    if (!m_pythonEnvironment)
-        (void) createPythonEnvironment();
-#endif
-
-    if (m_pythonEnvironment)
-        return *m_pythonEnvironment;
-    else
-        throw pdal_error("Unable to initialize the Python environment!");
-}
-
-pdal::gdal::GlobalDebug* GlobalEnvironment::getGDALDebug()
-{
-    getGDALEnvironment();
-#ifdef PDAL_HAVE_GDAL
-    if (m_gdal_debug == 0)
-        m_gdal_debug = new pdal::gdal::GlobalDebug();
-
-#endif
-    return m_gdal_debug;
-}
-
-boost::random::mt19937* GlobalEnvironment::getRNG()
-{
-    boost::random::mt19937* rng = getThreadEnvironment().getRNG();
-    if (!rng)
-        throw pdal_error("ThreadEnvironment RNG was null!");
-
-    return rng;
-}
 
 } //namespaces
+

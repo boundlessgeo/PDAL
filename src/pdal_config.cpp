@@ -44,6 +44,8 @@
 #include <pdal/pdal_config.hpp>
 
 #include <sstream>
+#include <iomanip>
+
 #include <pdal/pdal_defines.h>
 #include <pdal/gitsha.h>
 
@@ -51,26 +53,35 @@
 #include <geotiff.h>
 #endif
 
-#ifdef PDAL_HAVE_GDAL
+#ifdef PDAL_COMPILER_CLANG
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wfloat-equal"
+#endif
 #include <gdal.h>
+#ifdef PDAL_COMPILER_CLANG
+#  pragma clang diagnostic pop
 #endif
 
 #ifdef PDAL_HAVE_LASZIP
 #include <laszip/laszip.hpp>
 #endif
 
+#ifdef PDAL_HAVE_GEOS
+#include <geos/version.h>
+#endif
+
+#ifdef PDAL_HAVE_HEXER
+#include <hexer/hexer.hpp>
+#endif
+
+#ifdef PDAL_HAVE_LIBXML2
+#include <libxml/xmlversion.h>
+#endif
+
+#include <pdal/util/Utils.hpp>
+
 namespace pdal
 {
-
-/// Check if GDAL support has been built in to PDAL
-bool IsGDALEnabled()
-{
-#ifdef PDAL_HAVE_GDAL
-    return true;
-#else
-    return false;
-#endif
-}
 
 /// Check if GeoTIFF support has been built in to PDAL
 bool IsLibGeoTIFFEnabled()
@@ -86,15 +97,6 @@ bool IsLibGeoTIFFEnabled()
 bool IsLasZipEnabled()
 {
 #ifdef PDAL_HAVE_LASZIP
-    return true;
-#else
-    return false;
-#endif
-}
-
-bool IsEmbeddedBoost()
-{
-#ifdef PDAL_EMBED_BOOST
     return true;
 #else
     return false;
@@ -126,50 +128,109 @@ int GetVersionInteger()
     return PDAL_VERSION_INTEGER;
 }
 
+std::string GetSHA1()
+{
+	return g_GIT_SHA1;
+}
+
 
 /// Tell the user a bit about PDAL's compilation
 std::string GetFullVersionString()
 {
     std::ostringstream os;
 
+    std::string sha = GetSHA1();
+    if (!Utils::iequals(sha, "Release"))
+        sha = sha.substr(0,6);
+
+    os << PDAL_VERSION_STRING << " (git-version: " << sha << ")";
+
+    return os.str();
+}
 
 
-#ifdef PDAL_HAVE_LIBGEOTIFF
-    os << " GeoTIFF "
-       << (LIBGEOTIFF_VERSION / 1000) << '.'
-       << (LIBGEOTIFF_VERSION / 100 % 10) << '.'
-       << (LIBGEOTIFF_VERSION % 100 / 10);
+std::string getPDALDebugInformation()
+{
+    Utils::screenWidth();
+    std::string headline(Utils::screenWidth(), '-');
+
+    std::ostringstream os;
+
+    os << headline << std::endl;
+    os << "PDAL debug information" << std::endl ;
+    os << headline << std::endl << std::endl;
+
+    os << "Version information" << std::endl;
+    os << headline << std::endl;
+    os << "(" << pdal::GetFullVersionString() << ")" << std::endl;
+    os << std::endl;
+
+    os << "Debug build status" << std::endl;
+    os << headline << std::endl;
+    os << PDAL_BUILD_TYPE << std::endl << std::endl;
+
+    os << "Enabled libraries" << std::endl;
+    os << headline << std::endl << std::endl;
+
+#ifdef PDAL_HAVE_GEOS
+    os << "GEOS (" << GEOS_VERSION << ") - " <<
+        "http://trac.osgeo.org/geos" << std::endl;
 #endif
 
-#ifdef PDAL_HAVE_GDAL
-    os << " GDAL " << GDALVersionInfo("RELEASE_NAME");
+    os << "GDAL (" << GDALVersionInfo("RELEASE_NAME") << ") - " <<
+        "http://www.gdal.org" << std::endl;
+
+#ifdef PDAL_HAVE_HEXER
+    os << "Hexer (" << HEXER_VERSION_MAJOR << '.' << HEXER_VERSION_MINOR <<
+        '.' << HEXER_VERSION_PATCH << ") - " <<
+        "http://github.com/hobu/hexer" << std::endl;
 #endif
 
 #ifdef PDAL_HAVE_LASZIP
-    os << " LASzip "
-       << LASZIP_VERSION_MAJOR << "."
-       << LASZIP_VERSION_MINOR << "."
-       << LASZIP_VERSION_REVISION;
+    os << "LASzip (" << LASZIP_VERSION_MAJOR << "." << LASZIP_VERSION_MINOR <<
+        "." << LASZIP_VERSION_REVISION << ") - " <<
+        "http://laszip.org" << std::endl;
 #endif
 
-    if (IsEmbeddedBoost())
-        os << " Embed ";
-    else
-        os << " System ";
+#ifdef PDAL_HAVE_LIBXML2
+    os << "libxml (" << LIBXML_DOTTED_VERSION << ") - " <<
+              "http://www.xmlsoft.org/" << std::endl;
+#endif
 
-    std::string info(os.str());
-    os.str("");
-    os << "PDAL " << PDAL_VERSION_STRING;
+#ifdef PDAL_HAVE_LIBGEOTIFF
+    os << "libgeotiff (" << LIBGEOTIFF_VERSION << ") - " <<
+        "http://trac.osgeo.org/geotiff" << std::endl;
+#endif
 
-    std::ostringstream revs;
-    revs << g_GIT_SHA1;
+#ifdef PDAL_HAVE_MRSID
+    os << "MrSID - " << "http://www.lizardtech.com" << std::endl;
+#endif
 
-    os << " (" << revs.str().substr(0, 6) <<")";
+#ifdef PDAL_HAVE_NITRO
+    os << "Nitro - " << "http://github.com/hobu/nitro" << std::endl;
+#endif
 
-    if (!info.empty())
-    {
-        os << " with" << info;
-    }
+#ifdef PDAL_HAVE_ORACLE
+    os << "Oracle - " << "http://www.oracle.com" << std::endl;
+#endif
+
+#ifdef PDAL_HAVE_P2G
+    os << "Points2grid = " <<
+        "http://github.com/CRREL/points2grid" << std::endl;
+#endif
+
+#ifdef PDAL_HAVE_PYTHON
+    os << "Python - " << "http://www.python.org" << std::endl;
+#endif
+
+#ifdef PDAL_HAVE_SQLITE
+    os << "SQLite - " << "http://www.sqlite.org" << std::endl;
+#endif
+
+#ifdef PDAL_HAVE_POSTGRESQL
+    os << "PostgreSQL - " <<
+        "http://github.com/pramsey/pointcloud" << std::endl;
+#endif
 
     return os.str();
 }

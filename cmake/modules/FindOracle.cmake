@@ -36,7 +36,7 @@ if(DEFINED ENV{ORACLE_HOME})
     ${ORACLE_HOME}/OCI/include) # Oracle XE on Windows
 
   set(ORACLE_OCI_NAMES clntsh libclntsh oci)
-  set(ORACLE_NNZ_NAMES nnz10 libnnz10 nnz11 libnnz11 ociw32)
+  set(ORACLE_NNZ_NAMES nnz10 libnnz10 nnz11 nnz12 libnnz11 libnnz12 ociw32)
   set(ORACLE_OCCI_NAMES libocci occi oraocci10 oraocci11)
 
   set(ORACLE_LIB_DIR 
@@ -76,6 +76,6 @@ endif(DEFINED ENV{ORACLE_HOME})
 # Handle the QUIETLY and REQUIRED arguments and set ORACLE_FOUND to TRUE
 # if all listed variables are TRUE
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(ORACLE DEFAULT_MSG ORACLE_LIBRARY ORACLE_INCLUDE_DIR)
+find_package_handle_standard_args(Oracle DEFAULT_MSG ORACLE_LIBRARY ORACLE_INCLUDE_DIR)
 
 mark_as_advanced(ORACLE_INCLUDE_DIR ORACLE_LIBRARY)

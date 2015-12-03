@@ -33,65 +33,40 @@
  ****************************************************************************/
 
 #include <pdal/SpatialReference.hpp>
-
-#include <boost/concept_check.hpp>
-#include <boost/property_tree/xml_parser.hpp>
-#include <boost/concept_check.hpp> // ignore_unused_variable_warning
-
-#include <boost/algorithm/string/trim.hpp>
+#include <pdal/PDALUtils.hpp>
 
 // gdal
-#ifdef PDAL_HAVE_GDAL
-#include <ogr_spatialref.h>
-#include <cpl_conv.h>
+#ifdef PDAL_COMPILER_CLANG
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wfloat-equal"
 #endif
+#ifdef PDAL_COMPILER_GCC
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+#include <ogr_spatialref.h>
+#ifdef PDAL_COMPILER_GCC
+#  pragma GCC diagnostic pop
+#endif
+#ifdef PDAL_COMPILER_CLANG
+#  pragma clang diagnostic pop
+#endif
+#include <cpl_conv.h>
 
-#include <pdal/Utils.hpp>
+#include <pdal/util/Utils.hpp>
 
 namespace pdal
 {
 
-SpatialReference::SpatialReference()
-    : m_wkt("")
-{
-    return;
-}
-
-
 SpatialReference::SpatialReference(const std::string& s)
-    : m_wkt("")
 {
-    this->setFromUserInput(s);
-    return;
-}
-
-
-SpatialReference::SpatialReference(SpatialReference const& rhs)
-    : m_wkt(rhs.m_wkt)
-{
-    return;
-}
-
-
-SpatialReference& SpatialReference::operator=(SpatialReference const& rhs)
-{
-    if (&rhs != this)
-    {
-        m_wkt = rhs.m_wkt;
-    }
-    return *this;
-}
-
-
-SpatialReference::~SpatialReference()
-{
-    return;
+    setFromUserInput(s);
 }
 
 
 bool SpatialReference::empty() const
 {
-    return (getWKT() == "");
+    return getWKT().empty();
 }
 
 
@@ -104,26 +79,18 @@ std::string SpatialReference::getWKT(WKTModeFlag mode_flag) const
 /// Fetch the SRS as WKT
 std::string SpatialReference::getWKT(WKTModeFlag mode_flag , bool pretty) const
 {
-#ifndef PDAL_SRS_ENABLED
-    boost::ignore_unused_variable_warning(mode_flag);
-    boost::ignore_unused_variable_warning(pretty);
-
-    // we don't have a way of making this pretty, or of stripping the compound wrapper.
-    return m_wkt;
-#else
-
     std::string result_wkt = m_wkt;
 
     if ((mode_flag == eHorizontalOnly
             && strstr(result_wkt.c_str(),"COMPD_CS") != NULL)
             || pretty)
     {
-        OGRSpatialReference* poSRS = (OGRSpatialReference*) OSRNewSpatialReference(result_wkt.c_str());
+        OGRSpatialReference* poSRS =
+            (OGRSpatialReference*)OSRNewSpatialReference(result_wkt.c_str());
         char *pszWKT = NULL;
 
         if (mode_flag == eHorizontalOnly)
             poSRS->StripVertical();
-
         if (pretty)
             poSRS->exportToPrettyWkt(&pszWKT, FALSE);
         else
@@ -136,78 +103,96 @@ std::string SpatialReference::getWKT(WKTModeFlag mode_flag , bool pretty) const
     }
 
     return result_wkt;
-#endif
 }
 
 
 void SpatialReference::setFromUserInput(std::string const& v)
 {
-#ifdef PDAL_SRS_ENABLED
-
     char* poWKT = 0;
     const char* input = v.c_str();
 
-    // OGRSpatialReference* poSRS = (OGRSpatialReference*) OSRNewSpatialReference(NULL);
     OGRSpatialReference srs(NULL);
     OGRErr err = srs.SetFromUserInput(const_cast<char *>(input));
     if (err != OGRERR_NONE)
     {
-        throw std::invalid_argument("could not import coordinate system into OGRSpatialReference SetFromUserInput");
+
+        std::ostringstream oss;
+        oss << "Could not import coordinate system '" << input << "'";
+        oss << " message '" << CPLGetLastErrorMsg() << "'";
+        throw pdal_error(oss.str());
     }
 
     srs.exportToWkt(&poWKT);
-
     std::string tmp(poWKT);
     CPLFree(poWKT);
-
     setWKT(tmp);
-#else
-    boost::ignore_unused_variable_warning(v);
-    throw std::runtime_error("GDAL is not available, SpatialReference could not be set from WKT");
-#endif
-}
-
-
-void SpatialReference::setWKT(std::string const& v)
-{
-    m_wkt = v;
-
-    return;
 }
 
 
 std::string SpatialReference::getProj4() const
 {
-#ifdef PDAL_SRS_ENABLED
+    std::string tmp;
 
     std::string wkt = getWKT(eCompoundOK);
     const char* poWKT = wkt.c_str();
 
     OGRSpatialReference srs(NULL);
-    if (OGRERR_NONE != srs.importFromWkt(const_cast<char **>(&poWKT)))
+    if (OGRERR_NONE == srs.importFromWkt(const_cast<char **>(&poWKT)))
     {
-        return std::string();
+        char* proj4 = 0;
+        srs.exportToProj4(&proj4);
+        tmp = proj4;
+        CPLFree(proj4);
+
+        Utils::trim(tmp);
     }
 
-    char* proj4 = 0;
-    srs.exportToProj4(&proj4);
-    std::string tmp(proj4);
-    CPLFree(proj4);
-
-    boost::algorithm::trim(tmp);
     return tmp;
-
-#else
-
-    // By default or if we have neither GDAL nor proj.4, we can't do squat
-    return std::string();
-#endif
 }
 
+std::string SpatialReference::getVertical() const
+{
+    std::string tmp("");
+
+    OGRSpatialReference* poSRS =
+        (OGRSpatialReference*)OSRNewSpatialReference(m_wkt.c_str());
+    char *pszWKT = NULL;
+
+    OGR_SRSNode* node = poSRS->GetAttrNode("VERT_CS");
+    if (node && poSRS)
+    {
+        node->exportToWkt(&pszWKT);
+        tmp = pszWKT;
+        CPLFree(pszWKT);
+        OSRDestroySpatialReference(poSRS);
+    }
+
+    return tmp;
+}
+
+std::string SpatialReference::getHorizontal() const
+{
+    std::string tmp("");
+
+    OGRSpatialReference* poSRS =
+        (OGRSpatialReference*)OSRNewSpatialReference(m_wkt.c_str());
+    char *pszWKT = NULL;
+
+    if (poSRS)
+    {
+        poSRS->StripVertical();
+
+        poSRS->exportToWkt(&pszWKT);
+        tmp = pszWKT;
+        CPLFree(pszWKT);
+        OSRDestroySpatialReference(poSRS);
+    }
+
+    return tmp;
+}
 
 void SpatialReference::setProj4(std::string const& v)
 {
-#ifdef PDAL_SRS_ENABLED
     char* poWKT = 0;
     const char* poProj4 = v.c_str();
 
@@ -218,39 +203,23 @@ void SpatialReference::setProj4(std::string const& v)
     }
 
     srs.exportToWkt(&poWKT);
-
-    std::string tmp(poWKT);
+    m_wkt = poWKT;
     CPLFree(poWKT);
-
-    m_wkt = tmp;
-
-#else
-    boost::ignore_unused_variable_warning(v);
-#endif
-
-    return;
 }
 
 
 bool SpatialReference::equals(const SpatialReference& input) const
 {
-#ifdef PDAL_SRS_ENABLED
-
-    OGRSpatialReferenceH current = OSRNewSpatialReference(getWKT(eCompoundOK, false).c_str());
-    OGRSpatialReferenceH other = OSRNewSpatialReference(input.getWKT(eCompoundOK, false).c_str());
+    OGRSpatialReferenceH current =
+        OSRNewSpatialReference(getWKT(eCompoundOK, false).c_str());
+    OGRSpatialReferenceH other =
+        OSRNewSpatialReference(input.getWKT(eCompoundOK, false).c_str());
 
     int output = OSRIsSame(current, other);
-
     OSRDestroySpatialReference(current);
     OSRDestroySpatialReference(other);
 
-    return (output==1);
-
-#else
-    boost::ignore_unused_variable_warning(input);
-    throw pdal_error("SpatialReference equality testing not available without GDAL+libgeotiff support");
-#endif
-
+    return (output == 1);
 }
 
 
@@ -272,66 +241,142 @@ const std::string& SpatialReference::getName() const
     return name;
 }
 
+
 bool SpatialReference::isGeographic() const
 {
-#ifdef PDAL_SRS_ENABLED
-
-    OGRSpatialReferenceH current = OSRNewSpatialReference(getWKT(eCompoundOK, false).c_str());
-
-    int isGeog = OSRIsGeographic(current);
-    bool output(false);
-
-    if (isGeog == 0)
-        output = false;
-    else
-        output = true;
-
+    OGRSpatialReferenceH current =
+        OSRNewSpatialReference(getWKT(eCompoundOK, false).c_str());
+    bool output = OSRIsGeographic(current);
     OSRDestroySpatialReference(current);
-
     return output;
-#else
-    throw std::runtime_error("GDAL is not available, SpatialReference could not determine if isGeographic");
-#endif
 }
 
 
-boost::property_tree::ptree SpatialReference::toPTree() const
+int SpatialReference::calculateZone(double lon, double lat)
 {
-    using boost::property_tree::ptree;
-    ptree srs;
+    // Force longitude [-180, 180)
+    lon = fmod(lon, 360.0);
+    if (lon < -180.0)
+        lon += 360.0;
+    else if (lon >= 180.0)
+        lon -= 360.0;
 
-#ifdef PDAL_SRS_ENABLED
-    srs.put("proj4", getProj4());
-    srs.put("prettywkt", getWKT(SpatialReference::eHorizontalOnly, true));
-    srs.put("wkt", getWKT(SpatialReference::eHorizontalOnly, false));
-    srs.put("compoundwkt", getWKT(eCompoundOK, false));
-    srs.put("prettycompoundwkt", getWKT(eCompoundOK, true));
+    int zone = 0;
 
-#else
-
-    std::string message;
-    if (m_wkt.size() == 0)
+    // Special Norway processing.
+    if (lat >= 56.0 && lat < 64.0 && lon >= 3.0 && lon < 12.0 )
+        zone = 32;
+    // Special Svalbard processing.
+    else if (lat >= 72.0 && lat < 84.0) 
     {
-        message = "Reference defined with VLR keys, but GeoTIFF and GDAL support are not available to produce definition";
+        if (lon >= 0.0  && lon < 9.0)
+            zone = 31;
+        else if (lon >= 9.0  && lon < 21.0)
+            zone = 33;
+        else if (lon >= 21.0  && lon < 33.0)
+            zone = 35;
+        else if (lon >= 33.0  && lon < 42.0)
+            zone = 37;
     }
-    else if (m_wkt.size() > 0)
-    {
-        message = "Reference defined with WKT, but GeoTIFF and GDAL support are not available to produce definition";
-    }
+    // Everywhere else.
     else
     {
-        message = "None";
+        zone = floor((lon + 180.0) / 6) + 1;
+        if (lat < 0)
+            zone = -zone;
     }
 
-    srs.put("proj4", message);
-    srs.put("prettywkt", message);
-    srs.put("wkt", message);
-    srs.put("compoundwkt", message);
-    srs.put("prettycompoundwkt", message);
-    srs.put("gtiff", message);
-#endif
+    return zone;
+}
 
-    return srs;
+
+int SpatialReference::computeUTMZone(const BOX3D& box) const
+{
+    // Nothing we can do if we're an empty SRS
+    if (empty())
+        return 0;
+
+    OGRSpatialReferenceH current =
+        OSRNewSpatialReference(getWKT(eHorizontalOnly, false).c_str());
+    if (! current)
+        throw std::invalid_argument("Could not fetch current SRS");
+
+    OGRSpatialReferenceH wgs84 = OSRNewSpatialReference(0);
+
+    if (OSRSetFromUserInput(wgs84, "EPSG:4326") != OGRERR_NONE)
+    {
+        OSRDestroySpatialReference(current);
+        OSRDestroySpatialReference(wgs84);
+        std::ostringstream msg;
+        msg << "Could not import GDAL input spatial reference for WGS84";
+        throw std::runtime_error(msg.str());
+    }
+
+    void* transform = OCTNewCoordinateTransformation(current, wgs84);
+
+    if (! transform)
+    {
+        OSRDestroySpatialReference(current);
+        OSRDestroySpatialReference(wgs84);
+        throw std::invalid_argument("could not comput transform from "
+            "coordinate system to WGS84");
+    }
+
+    double minx(0.0), miny(0.0), minz(0.0);
+    double maxx(0.0), maxy(0.0), maxz(0.0);
+
+    // OCTTransform modifies values in-place
+    minx = box.minx; miny = box.miny; minz = box.minz;
+    maxx = box.maxx; maxy = box.maxy; maxz = box.maxz;
+
+    int ret = OCTTransform(transform, 1, &minx, &miny, &minz);
+    if (ret == 0)
+    {
+        OCTDestroyCoordinateTransformation(transform);
+        OSRDestroySpatialReference(current);
+        OSRDestroySpatialReference(wgs84);
+        std::ostringstream msg;
+        msg << "Could not project minimum point for computeUTMZone::" <<
+            CPLGetLastErrorMsg() << ret;
+        throw pdal_error(msg.str());
+    }
+
+    ret = OCTTransform(transform, 1, &maxx, &maxy, &maxz);
+    if (ret == 0)
+    {
+        OCTDestroyCoordinateTransformation(transform);
+        OSRDestroySpatialReference(current);
+        OSRDestroySpatialReference(wgs84);
+        std::ostringstream msg;
+        msg << "Could not project maximum point for computeUTMZone::" <<
+            CPLGetLastErrorMsg() << ret;
+        throw pdal_error(msg.str());
+    }
+
+    int min_zone(0);
+    int max_zone(0);
+    min_zone = calculateZone(minx, miny);
+    std::cerr << "Min X/Y/zone = " << minx << "/" << miny << "/" << min_zone << "!\n";
+    max_zone = calculateZone(maxx, maxy);
+    std::cerr << "Max X/Y/zone = " << maxx << "/" << maxy << "/" << max_zone << "!\n";
+
+    if (min_zone != max_zone)
+    {
+        OCTDestroyCoordinateTransformation(transform);
+        OSRDestroySpatialReference(current);
+        OSRDestroySpatialReference(wgs84);
+        std::ostringstream msg;
+        msg << "Minimum zone is " << min_zone <<"' and maximum zone is '" <<
+            max_zone << "'. They do not match because they cross a "
+            "zone boundary";
+        throw pdal_error(msg.str());
+    }
+
+    OCTDestroyCoordinateTransformation(transform);
+    OSRDestroySpatialReference(current);
+    OSRDestroySpatialReference(wgs84);
+
+    return min_zone;
 }
 
 
@@ -343,28 +388,14 @@ void SpatialReference::dump() const
 
 std::ostream& operator<<(std::ostream& ostr, const SpatialReference& srs)
 {
-
-#ifdef PDAL_SRS_ENABLED
-
-    std::string wkt = srs.toPTree().get<std::string>("prettycompoundwkt");
+    std::string wkt = Utils::toPTree(srs).get<std::string>("prettycompoundwkt");
     ostr << wkt;
-
     return ostr;
-
-#else
-    boost::ignore_unused_variable_warning(ostr);
-    boost::ignore_unused_variable_warning(srs);
-    ostr << "SpatialReference data is not available without GDAL+libgeotiff support";
-    return ostr;
-#endif
 }
 
 
 std::istream& operator>>(std::istream& istr, SpatialReference& srs)
 {
-
-#ifdef PDAL_SRS_ENABLED
-
     SpatialReference ref;
 
     std::ostringstream oss;
@@ -375,15 +406,6 @@ std::istream& operator>>(std::istream& istr, SpatialReference& srs)
 
     srs = ref;
     return istr;
-
-#else
-    boost::ignore_unused_variable_warning(istr);
-    boost::ignore_unused_variable_warning(srs);
-    throw pdal_error("SpatialReference io operator>> is not available without GDAL+libgeotiff support");
-#endif
 }
-
-
-
 
 } // namespace pdal

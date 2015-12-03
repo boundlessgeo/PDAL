@@ -41,8 +41,7 @@
  * OF SUCH DAMAGE.
  ****************************************************************************/
 
-#ifndef INCLUDED_PDAL_CONFIG_HPP
-#define INCLUDED_PDAL_CONFIG_HPP
+#pragma once
 
 #include <pdal/pdal_internal.hpp>
 
@@ -55,18 +54,15 @@ PDAL_DLL bool IsLibLASEnabled();
 PDAL_DLL bool IsGDALEnabled();
 PDAL_DLL bool IsLibGeoTIFFEnabled();
 PDAL_DLL bool IsLasZipEnabled();
-PDAL_DLL bool IsEmbeddedBoost();
 
 PDAL_DLL std::string GetFullVersionString();
 PDAL_DLL std::string GetVersionString();
 PDAL_DLL int GetVersionInteger();
+PDAL_DLL std::string GetSHA1();
 PDAL_DLL int GetVersionMajor();
 PDAL_DLL int GetVersionMinor();
 PDAL_DLL int GetVersionPatch();
-
-
-
+PDAL_DLL std::string getPDALDebugInformation();
 
 } // namespace pdal
 
-#endif

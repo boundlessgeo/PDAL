@@ -18,7 +18,6 @@
 # For details see the accompanying COPYING-CMAKE-SCRIPTS file.
 #
 ###############################################################################
-MESSAGE(STATUS "Searching for LASzip ${LASzip_FIND_VERSION}+ library")
 
 IF(LASZIP_INCLUDE_DIR)
   # Already in cache, be silent
@@ -38,8 +37,7 @@ ENDIF()
 
 
 FIND_PATH(LASZIP_INCLUDE_DIR
-  laszip.hpp
-  PATH_PREFIXES laszip
+  laszip/laszip.hpp
   PATHS
   /usr/include
   /usr/local/include
@@ -55,10 +53,6 @@ FIND_LIBRARY(LASZIP_LIBRARY
   /usr/local/lib
   /tmp/lasjunk/lib
   ${OSGEO4W_ROOT_DIR}/lib)
-
-IF(LASZIP_FOUND)
-  SET(LASZIP_LIBRARIES ${LASZIP_LIBRARY})
-ENDIF()
 
 IF(LASZIP_INCLUDE_DIR)
   SET(LASZIP_VERSION 0)
@@ -85,10 +79,7 @@ IF(LASZIP_INCLUDE_DIR)
     SET(LASZIP_VERSION "${LASZIP_VERSION_MAJOR}.${LASZIP_VERSION_MINOR}.${LASZIP_VERSION_REVISION}"
       CACHE INTERNAL "The version string for LASzip library")
 
-    IF (LASZIP_VERSION VERSION_EQUAL LASzip_FIND_VERSION OR
-        LASZIP_VERSION VERSION_GREATER LASzip_FIND_VERSION)
-      MESSAGE(STATUS "Found LASzip version: ${LASZIP_VERSION}")
-    ELSE()
+    IF (LASZIP_VERSION VERSION_LESS LASzip_FIND_VERSION)
       MESSAGE(FATAL_ERROR "LASzip version check failed. Version ${LASZIP_VERSION} was found, at least version ${LASzip_FIND_VERSION} is required")
     ENDIF()
   ELSE()
@@ -101,3 +92,7 @@ ENDIF()
 # if all listed variables are TRUE
 INCLUDE(FindPackageHandleStandardArgs)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(LASzip DEFAULT_MSG LASZIP_LIBRARY LASZIP_INCLUDE_DIR)
+
+IF(LASZIP_FOUND)
+  SET(LASZIP_LIBRARIES ${LASZIP_LIBRARY})
+ENDIF()

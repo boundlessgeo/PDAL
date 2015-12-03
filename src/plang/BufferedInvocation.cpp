@@ -32,15 +32,14 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#include <pdal/pdal_internal.hpp>
-#ifdef PDAL_HAVE_PYTHON
-
 #include <pdal/plang/BufferedInvocation.hpp>
 
 #ifdef PDAL_COMPILER_MSVC
 #  pragma warning(disable: 4127)  // conditional expression is constant
 #  pragma warning(disable: 4505)  // unreferenced local function has been removed
 #endif
+
+using namespace pdal;
 
 namespace pdal
 {
@@ -50,36 +49,35 @@ namespace plang
 
 BufferedInvocation::BufferedInvocation(const Script& script)
     : Invocation(script)
+{}
+
+
+void BufferedInvocation::begin(PointView& view, MetadataNode m)
 {
-    return;
-}
+    PointLayoutPtr layout(view.m_pointTable.layout());
+    Dimension::IdList const& dims = layout->dims();
 
-
-void BufferedInvocation::beginChunk(PointBuffer& buffer)
-{
-    const Schema& schema = buffer.getSchema();
-
-    schema::Map const& map = schema.getDimensions();
-    schema::index_by_index const& idx = map.get<schema::index>();
-    for (schema::index_by_index::const_iterator iter = idx.begin(); iter != idx.end(); ++iter)
+    for (auto di = dims.begin(); di != dims.end(); ++di)
     {
-        const Dimension& dim = *iter;
-        const std::string& name = dim.getName();
-
-        boost::uint8_t* data = buffer.getData(0) + dim.getByteOffset();
-
-        const boost::uint32_t numPoints = buffer.getNumPoints();
-        const boost::uint32_t stride = buffer.getSchema().getByteSize();
-        const dimension::Interpretation datatype = dim.getInterpretation();
-        const boost::uint32_t numBytes = dim.getByteSize();
-        this->insertArgument(name, data, numPoints, stride, datatype, numBytes);
+        Dimension::Id::Enum d = *di;
+        const Dimension::Detail *dd = layout->dimDetail(d);
+        void *data = malloc(dd->size() * view.size());
+        m_buffers.push_back(data);  // Hold pointer for deallocation
+        char *p = (char *)data;
+        for (PointId idx = 0; idx < view.size(); ++idx)
+        {
+            view.getFieldInternal(d, idx, (void *)p);
+            p += dd->size();
+        }
+        std::string name = layout->dimName(*di);
+        insertArgument(name, (uint8_t *)data, dd->type(), view.size());
     }
-
-    return;
+    Py_XDECREF(m_metaIn);
+    m_metaIn = plang::fromMetadata(m);
 }
 
 
-void BufferedInvocation::endChunk(PointBuffer& buffer)
+void BufferedInvocation::end(PointView& view, MetadataNode m)
 {
     // for each entry in the script's outs dictionary,
     // look up that entry's name in the schema and then
@@ -89,37 +87,35 @@ void BufferedInvocation::endChunk(PointBuffer& buffer)
     std::vector<std::string> names;
     getOutputNames(names);
 
-    const Schema& schema = buffer.getSchema();
+    PointLayoutPtr layout(view.m_pointTable.layout());
+    Dimension::IdList const& dims = layout->dims();
 
-    for (unsigned int i=0; i<names.size(); i++)
+    for (auto di = dims.begin(); di != dims.end(); ++di)
     {
-        schema::Map map = schema.getDimensions();
-        schema::index_by_name& name_index = map.get<schema::name>();
-        schema::index_by_name::const_iterator it = name_index.find(names[i]);
-        if (it != name_index.end())
+        Dimension::Id::Enum d = *di;
+        const Dimension::Detail *dd = layout->dimDetail(d);
+        std::string name = layout->dimName(*di);
+        auto found = std::find(names.begin(), names.end(), name);
+        if (found == names.end()) continue; // didn't have this dim in the names
+
+        assert(name == *found);
+        assert(hasOutputVariable(name));
+
+        size_t size = dd->size();
+        void *data = extractResult(name, dd->type());
+        char *p = (char *)data;
+        for (PointId idx = 0; idx < view.size(); ++idx)
         {
-            const Dimension& dim = *it;
-            const std::string& name = dim.getName();
-
-            assert(name == names[i]);
-            assert(hasOutputVariable(name));
-
-            {
-                boost::uint8_t* data = buffer.getData(0) + dim.getByteOffset();
-                const boost::uint32_t numPoints = buffer.getNumPoints();
-                const boost::uint32_t stride = buffer.getSchema().getByteSize();
-                const dimension::Interpretation datatype = dim.getInterpretation();
-                const boost::uint32_t numBytes = dim.getByteSize();
-                extractResult(name, data, numPoints, stride, datatype, numBytes);
-            }
+            view.setField(d, dd->type(), idx, (void *)p);
+            p += size;
         }
     }
-
-    return;
+    for (auto bi = m_buffers.begin(); bi != m_buffers.end(); ++bi)
+        free(*bi);
+    m_buffers.clear();
+    addMetadata(m_metaOut, m);
 }
 
+} //namespace plang
+} //namespace pdal
 
-}
-} //namespaces
-
-#endif

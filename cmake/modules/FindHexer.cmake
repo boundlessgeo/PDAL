@@ -16,7 +16,6 @@
 # For details see the accompanying COPYING-CMAKE-SCRIPTS file.
 #
 ###############################################################################
-MESSAGE(STATUS "Searching for Hexer ${Hexer_FIND_VERSION}+ library")
 
 IF(HEXER_INCLUDE_DIR)
   # Already in cache, be silent
@@ -60,13 +59,13 @@ ENDIF()
 IF(HEXER_INCLUDE_DIR)
   SET(HEXER_VERSION 0)
 
-  SET(HEXER_VERSION_H "${HEXER_INCLUDE_DIR}/hexer/hexer.hpp")
+  SET(HEXER_VERSION_H "${HEXER_INCLUDE_DIR}/hexer/hexer_defines.h")
   FILE(READ ${HEXER_VERSION_H} HEXER_VERSION_H_CONTENTS)
 
   IF (DEFINED HEXER_VERSION_H_CONTENTS)
     string(REGEX REPLACE ".*#define[ \t]HEXER_VERSION_MAJOR[ \t]+([0-9]+).*" "\\1" HEXER_VERSION_MAJOR "${HEXER_VERSION_H_CONTENTS}")
     string(REGEX REPLACE ".*#define[ \t]HEXER_VERSION_MINOR[ \t]+([0-9]+).*" "\\1" HEXER_VERSION_MINOR "${HEXER_VERSION_H_CONTENTS}")
-    string(REGEX REPLACE ".*#define[ \t]HEXER_VERSION_REVISION[ \t]+([0-9]+).*"   "\\1" HEXER_VERSION_REVISION   "${HEXER_VERSION_H_CONTENTS}")
+    string(REGEX REPLACE ".*#define[ \t]HEXER_VERSION_PATCH[ \t]+([0-9]+).*"   "\\1" HEXER_VERSION_PATCH   "${HEXER_VERSION_H_CONTENTS}")
 
     if(NOT ${HEXER_VERSION_MAJOR} MATCHES "[0-9]+")
       message(FATAL_ERROR "Hexer version parsing failed for HEXER_VERSION_MAJOR!")
@@ -75,17 +74,14 @@ IF(HEXER_INCLUDE_DIR)
       message(FATAL_ERROR "Hexer version parsing failed for HEXER_VERSION_MINOR!")
     endif()
     if(NOT ${HEXER_VERSION_REVISION} MATCHES "[0-9]+")
-      message(FATAL_ERROR "Hexer version parsing failed for HEXER_VERSION_REVISION!")
+      message(FATAL_ERROR "Hexer version parsing failed for HEXER_VERSION_PATCH!")
     endif()
 
 
-    SET(HEXER_VERSION "${HEXER_VERSION_MAJOR}.${HEXER_VERSION_MINOR}.${HEXER_VERSION_REVISION}"
+    SET(HEXER_VERSION "${HEXER_VERSION_MAJOR}.${HEXER_VERSION_MINOR}.${HEXER_VERSION_PATCH}"
       CACHE INTERNAL "The version string for Hexer library")
 
-    IF (HEXER_VERSION VERSION_EQUAL Hexer_FIND_VERSION OR
-        HEXER_VERSION VERSION_GREATER Hexer_FIND_VERSION)
-      MESSAGE(STATUS "Found Hexer version: ${HEXER_VERSION}")
-    ELSE()
+    IF (HEXER_VERSION VERSION_LESS Hexer_FIND_VERSION)
       MESSAGE(FATAL_ERROR "Hexer version check failed. Version ${HEXER_VERSION} was found, at least version ${Hexer_FIND_VERSION} is required")
     ENDIF()
   ELSE()

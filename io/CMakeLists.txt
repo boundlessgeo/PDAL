@@ -1,0 +1,13 @@
+add_subdirectory(bpf)
+add_subdirectory(derivative)
+add_subdirectory(faux)
+add_subdirectory(las)
+add_subdirectory(null)
+add_subdirectory(optech)
+add_subdirectory(ply)
+add_subdirectory(qfit)
+add_subdirectory(sbet)
+add_subdirectory(text)
+add_subdirectory(terrasolid)
+
+set(PDAL_TARGET_OBJECTS ${PDAL_TARGET_OBJECTS} PARENT_SCOPE)

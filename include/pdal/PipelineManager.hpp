@@ -32,68 +32,70 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#ifndef INCLUDED_PIPELINEMANAGER_HPP
-#define INCLUDED_PIPELINEMANAGER_HPP
+#pragma once
 
 #include <pdal/pdal_internal.hpp>
 #include <pdal/StageFactory.hpp>
 
-#include <boost/shared_ptr.hpp>
-
 #include <vector>
-#include <map>
 #include <string>
-
 
 namespace pdal
 {
 
 class Options;
 
-
 class PDAL_DLL PipelineManager
 {
 public:
-    PipelineManager();
-    ~PipelineManager();
+    PipelineManager() : m_tablePtr(new PointTable()), m_table(*m_tablePtr),
+            m_progressFd(-1)
+        {}
+    PipelineManager(int progressFd) : m_tablePtr(new PointTable()),
+            m_table(*m_tablePtr), m_progressFd(progressFd)
+        {}
+    PipelineManager(PointTableRef table) : m_table(table), m_progressFd(-1)
+        {}
+    PipelineManager(PointTableRef table, int progressFd) : m_table(table),
+            m_progressFd(progressFd)
+        {}
 
     // Use these to manually add stages into the pipeline manager.
-    Reader* addReader(const std::string& type, const Options&);
-    Filter* addFilter(const std::string& type, Stage& prevStage, const Options&);
-    MultiFilter* addMultiFilter(const std::string& type, const std::vector<Stage*>& prevStages, const Options&);
-    Writer* addWriter(const std::string& type, Stage& prevStage, const Options&);
-    
-    void removeWriter();
-    // returns true if the pipeline endpoint is a writer
-    bool isWriterPipeline() const;
+    Stage& addReader(const std::string& type);
+    Stage& addFilter(const std::string& type);
+    Stage& addWriter(const std::string& type);
 
-    // return the pipeline writer endpoint (or NULL, if not a writer pipeline)
-    Writer* getWriter() const;
+    // returns true if the pipeline endpoint is a writer
+    bool isWriterPipeline() const
+        { return (bool)getStage(); }
 
     // return the pipeline reader endpoint (or NULL, if not a reader pipeline)
-    Stage* getStage() const;
+    Stage* getStage() const
+        { return m_stages.empty() ? NULL : m_stages.back().get(); }
 
-    // for writer pipelines, this convenience function calls getWriter()->write() so that
-    // the user doesn't even need to know anything about the Writer class
-    boost::uint64_t execute();
-    
-    void registerPluginIfExists( const Options& options );
+    void prepare() const;
+    point_count_t execute();
+
+    // Get the resulting point views.
+    const PointViewSet& views() const
+        { return m_viewSet; }
+
+    // Get the point table data.
+    PointTableRef pointTable() const
+        { return m_table; }
+
+    MetadataNode getMetadata() const;
 
 private:
     StageFactory m_factory;
+    std::unique_ptr<PointTable> m_tablePtr;
+    PointTableRef m_table;
 
-    typedef std::vector<Reader*> ReaderList;
-    typedef std::vector<Filter*> FilterList;
-    typedef std::vector<MultiFilter*> MultiFilterList;
-    typedef std::vector<Writer*> WriterList;
-    ReaderList m_readers;
-    FilterList m_filters;
-    MultiFilterList m_multifilters;
-    WriterList m_writers;
+    PointViewSet m_viewSet;
 
-    Stage* m_lastStage;
-    Writer* m_lastWriter;
-    bool m_isWriterPipeline;
+    typedef std::vector<std::unique_ptr<Stage> > StagePtrList;
+    StagePtrList m_stages;
+    int m_progressFd;
 
     PipelineManager& operator=(const PipelineManager&); // not implemented
     PipelineManager(const PipelineManager&); // not implemented
@@ -102,4 +104,3 @@ private:
 
 } // namespace pdal
 
-#endif

@@ -32,205 +32,191 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
-#include <boost/test/unit_test.hpp>
+#include <pdal/pdal_test_main.hpp>
 
 #include "Support.hpp"
-#include <pdal/FileUtils.hpp>
 
+#include <pdal/util/FileUtils.hpp>
+#include <pdal/util/Utils.hpp>
 
 using namespace pdal;
+using namespace std;
 
-BOOST_AUTO_TEST_SUITE(SupportTest)
-
-
-BOOST_AUTO_TEST_CASE(test_paths)
+TEST(SupportTest, test_paths)
 {
     // does the data path work?
-    const std::string data_file = Support::datapath("simple.las");
-    BOOST_CHECK(FileUtils::fileExists(data_file));
+    string data_file = Support::datapath("las/simple.las");
+    EXPECT_TRUE(FileUtils::fileExists(data_file));
 
     // make sure we have read access
-    std::istream* istr = FileUtils::openFile(data_file);
-    std::string yow;
+    istream* istr = FileUtils::openFile(data_file);
+    string yow;
     *istr >> yow;
     FileUtils::closeFile(istr);
 
     // does the temp path work?
-    const std::string temp_file_ok = Support::temppath("README.txt");
-    BOOST_CHECK(FileUtils::fileExists(temp_file_ok));
-    const std::string temp_file = Support::temppath("my_temp_file.dat");
-    BOOST_CHECK(!FileUtils::fileExists(temp_file));
+    string temp_file_ok = Support::temppath("README.txt");
+    EXPECT_TRUE(FileUtils::fileExists(temp_file_ok));
+    string temp_file = Support::temppath("my_temp_file.dat");
+    EXPECT_TRUE(!FileUtils::fileExists(temp_file));
 
     // make sure we have write access to the temp dir
-    std::ostream* ostr = FileUtils::createFile(temp_file);
+    ostream* ostr = FileUtils::createFile(temp_file);
     *ostr << "yow";
     FileUtils::closeFile(ostr);
-    BOOST_CHECK(FileUtils::fileExists(temp_file));
-    BOOST_CHECK(FileUtils::deleteFile(temp_file));
-    BOOST_CHECK(!FileUtils::fileExists(temp_file));
+    EXPECT_TRUE(FileUtils::fileExists(temp_file));
+    EXPECT_TRUE(FileUtils::deleteFile(temp_file));
+    EXPECT_TRUE(!FileUtils::fileExists(temp_file));
 
     // does binpath (and exename) work?
-    std::string this_bin = Support::exename("pdal_test");
-#ifdef PDAL_PLATFORM_WIN32
-    BOOST_CHECK_EQUAL(this_bin, "pdal_test.exe");
+    string this_bin = Support::exename("pdal");
+#ifdef _WIN32
+    EXPECT_EQ(this_bin, "pdal.exe");
 #else
-    BOOST_CHECK_EQUAL(this_bin, "pdal_test");
+    EXPECT_EQ(this_bin, "pdal");
 #endif
     this_bin = Support::binpath(this_bin);
-    BOOST_CHECK(FileUtils::fileExists(this_bin));
-
-    return;
+    EXPECT_TRUE(FileUtils::fileExists(this_bin));
 }
 
 
-BOOST_AUTO_TEST_CASE(test_diff_file)
+TEST(SupportTest, test_diff_file)
 {
-    boost::uint32_t diffs = 0;
+    uint32_t diffs = 0;
     bool same = false;
 
     diffs = Support::diff_files(Support::datapath("misc/data1.dat"), Support::datapath("misc/data0.dat"));
     same = Support::compare_files(Support::datapath("misc/data1.dat"), Support::datapath("misc/data0.dat"));
-    BOOST_CHECK(diffs > 0);
-    BOOST_CHECK(same == false);
+    EXPECT_TRUE(diffs > 0);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_files(Support::datapath("misc/data0.dat"), Support::datapath("misc/data1.dat"));
     same = Support::compare_files(Support::datapath("misc/data0.dat"), Support::datapath("misc/data1.dat"));
-    BOOST_CHECK(diffs > 0);
-    BOOST_CHECK(same == false);
+    EXPECT_TRUE(diffs > 0);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_files(Support::datapath("misc/data1.dat"), Support::datapath("misc/data1.dat"));
     same = Support::compare_files(Support::datapath("misc/data1.dat"), Support::datapath("misc/data1.dat"));
-    BOOST_CHECK(diffs == 0);
-    BOOST_CHECK(same == true);
+    EXPECT_EQ(diffs, 0U);
+    EXPECT_TRUE(same == true);
 
     diffs = Support::diff_files(Support::datapath("misc/data1.dat"), Support::datapath("misc/data2.dat"));
     same = Support::compare_files(Support::datapath("misc/data1.dat"), Support::datapath("misc/data2.dat"));
-    BOOST_CHECK(diffs == 1);
-    BOOST_CHECK(same == false);
+    EXPECT_EQ(diffs, 1U);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_files(Support::datapath("misc/data2.dat"), Support::datapath("misc/data1.dat"));
     same = Support::compare_files(Support::datapath("misc/data2.dat"), Support::datapath("misc/data1.dat"));
-    BOOST_CHECK(diffs == 1);
-    BOOST_CHECK(same == false);
+    EXPECT_EQ(diffs, 1U);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_files(Support::datapath("misc/data1.dat"), Support::datapath("misc/data3.dat"));
     same = Support::compare_files(Support::datapath("misc/data1.dat"), Support::datapath("misc/data3.dat"));
-    BOOST_CHECK(diffs == 2);
-    BOOST_CHECK(same == false);
+    EXPECT_EQ(diffs, 1U);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_files(Support::datapath("misc/data3.dat"), Support::datapath("misc/data1.dat"));
     same = Support::compare_files(Support::datapath("misc/data3.dat"), Support::datapath("misc/data1.dat"));
-    BOOST_CHECK(diffs == 2);
-    BOOST_CHECK(same == false);
-
-    return;
+    EXPECT_EQ(diffs, 1U);
+    EXPECT_TRUE(same == false);
 }
 
 
-BOOST_AUTO_TEST_CASE(test_diff_file_ignorable)
+TEST(SupportTest, test_diff_file_ignorable)
 {
-    boost::uint32_t diffs = 0;
+    uint32_t diffs = 0;
 
     // no ignorable region
     {
         diffs = Support::diff_files(Support::datapath("misc/data4a.dat"), Support::datapath("misc/data4b.dat"));
-        BOOST_CHECK(diffs == 6);
-        BOOST_CHECK(Support::compare_files(Support::datapath("misc/data4a.dat"), Support::datapath("misc/data4b.dat")) == false);
+        EXPECT_TRUE(diffs == 6U);
+        EXPECT_TRUE(Support::compare_files(Support::datapath("misc/data4a.dat"), Support::datapath("misc/data4b.dat")) == false);
     }
 
     // treat whole file as ignorable
     {
-        boost::uint32_t start[1] = {0};
-        boost::uint32_t len[1] = {100};
+        uint32_t start[1] = {0};
+        uint32_t len[1] = {100};
         diffs = Support::diff_files(Support::datapath("misc/data4a.dat"), Support::datapath("misc/data4b.dat"), start, len, 1);
-        BOOST_CHECK(diffs == 0);
+        EXPECT_EQ(diffs, 0U);
     }
 
     // just ignore the first region
     {
-        boost::uint32_t start[1] = {3};
-        boost::uint32_t len[1] = {4};
+        uint32_t start[1] = {3};
+        uint32_t len[1] = {4};
         diffs = Support::diff_files(Support::datapath("misc/data4a.dat"), Support::datapath("misc/data4b.dat"), start, len, 1);
-        BOOST_CHECK(diffs == 2);
+        EXPECT_EQ(diffs, 2U);
     }
 
     // ignore the first and second regions
     {
-        boost::uint32_t start[2] = {3, 23};
-        boost::uint32_t len[2] = {4, 2};
+        uint32_t start[2] = {3, 23};
+        uint32_t len[2] = {4, 2};
         diffs = Support::diff_files(Support::datapath("misc/data4a.dat"), Support::datapath("misc/data4b.dat"), start, len, 2);
-        BOOST_CHECK(diffs == 0);
+        EXPECT_EQ(diffs, 0U);
     }
 
     // ignore first and part of second region
     {
-        boost::uint32_t start[2] = {3, 22};
-        boost::uint32_t len[2] = {4, 2};
-        diffs = Support::diff_files(Support::datapath("misc/data4a.dat"), Support::datapath("misc/data4b.dat"), start, len, 2);
-        BOOST_CHECK(diffs == 1);
+        uint32_t start[2] = {3, 22};
+        uint32_t len[2] = {4, 2};
+        diffs = Support::diff_files(Support::datapath("misc/data4a.dat"),
+            Support::datapath("misc/data4b.dat"), start, len, 2);
+        EXPECT_EQ(diffs, 1U);
     }
-
-    return;
 }
 
 
-BOOST_AUTO_TEST_CASE(test_diff_text_file)
+TEST(SupportTest, test_diff_text_file)
 {
-    boost::uint32_t diffs = 0;
+    uint32_t diffs = 0;
     bool same = false;
-
     diffs = Support::diff_text_files(Support::datapath("misc/data1.txt"), Support::datapath("misc/data0.txt"));
     same = Support::compare_text_files(Support::datapath("misc/data1.txt"), Support::datapath("misc/data0.txt"));
-    BOOST_CHECK(diffs > 0);
-    BOOST_CHECK(same == false);
+    EXPECT_TRUE(diffs > 0);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_text_files(Support::datapath("misc/data0.txt"), Support::datapath("misc/data1.txt"));
     same = Support::compare_text_files(Support::datapath("misc/data0.txt"), Support::datapath("misc/data1.txt"));
-    BOOST_CHECK(diffs > 0);
-    BOOST_CHECK(same == false);
+    EXPECT_TRUE(diffs > 0);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_text_files(Support::datapath("misc/data1.txt"), Support::datapath("misc/data1.txt"));
     same = Support::compare_text_files(Support::datapath("misc/data1.txt"), Support::datapath("misc/data1.txt"));
-    BOOST_CHECK(diffs == 0);
-    BOOST_CHECK(same == true);
+    EXPECT_TRUE(diffs == 0);
+    EXPECT_TRUE(same == true);
 
     diffs = Support::diff_text_files(Support::datapath("misc/data1.txt"), Support::datapath("misc/data2.txt"));
     same = Support::compare_text_files(Support::datapath("misc/data1.txt"), Support::datapath("misc/data2.txt"));
-    BOOST_CHECK(diffs == 1);
-    BOOST_CHECK(same == false);
+    EXPECT_TRUE(diffs == 1);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_text_files(Support::datapath("misc/data2.txt"), Support::datapath("misc/data1.txt"));
     same = Support::compare_text_files(Support::datapath("misc/data2.txt"), Support::datapath("misc/data1.txt"));
-    BOOST_CHECK(diffs == 1);
-    BOOST_CHECK(same == false);
+    EXPECT_TRUE(diffs == 1);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_text_files(Support::datapath("misc/data1.txt"), Support::datapath("misc/data3.txt"));
     same = Support::compare_text_files(Support::datapath("misc/data1.txt"), Support::datapath("misc/data3.txt"));
-    BOOST_CHECK(diffs == 2);
-    BOOST_CHECK(same == false);
+    EXPECT_TRUE(diffs == 2);
+    EXPECT_TRUE(same == false);
 
     diffs = Support::diff_text_files(Support::datapath("misc/data3.txt"), Support::datapath("misc/data1.txt"));
     same = Support::compare_text_files(Support::datapath("misc/data3.txt"), Support::datapath("misc/data1.txt"));
-    BOOST_CHECK(diffs == 2);
-    BOOST_CHECK(same == false);
-
-    return;
+    EXPECT_TRUE(diffs == 2);
+    EXPECT_TRUE(same == false);
 }
 
 
-BOOST_AUTO_TEST_CASE(test_run_command)
+TEST(SupportTest, test_run_command)
 {
     // amazingly, this command works under both dos *and* unix shells
-    const std::string cmd = "echo foo";
+    string cmd = "echo foo";
 
-    std::string output;
-    const int stat = pdal::Utils::run_shell_command(cmd, output);
+    string output;
+    const int stat = Utils::run_shell_command(cmd, output);
 
-    BOOST_CHECK_EQUAL(output.substr(0, 3), "foo");
-    BOOST_CHECK_EQUAL(stat, 0);
-
-    return;
+    EXPECT_EQ(output.substr(0, 3), "foo");
+    EXPECT_EQ(stat, 0);
 }
-
-
-BOOST_AUTO_TEST_SUITE_END()

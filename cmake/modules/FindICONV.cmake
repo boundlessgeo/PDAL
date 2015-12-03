@@ -29,7 +29,7 @@
 #  
 
 set(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS true)
-
+include(CheckFunctionExists)
 if (ICONV_INCLUDE_DIR)
   # Already in cache, be silent
   set(ICONV_FIND_QUIETLY TRUE)
@@ -85,7 +85,6 @@ endif()
 
 
 if(ICONV_FOUND)
-      message(STATUS "Found iconv library: ${ICONV_LIBRARY}")
    if(NOT ICONV_FIND_QUIETLY)
       message(STATUS "Found iconv library: ${ICONV_LIBRARY}")
       #message(STATUS "Found iconv   dll  : ${ICONV_DLL}")

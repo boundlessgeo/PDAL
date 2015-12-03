@@ -32,6 +32,8 @@
 * OF SUCH DAMAGE.
 ****************************************************************************/
 
+#include "gtest/gtest.h"
+
 #include "Support.hpp"
 
 #include <iostream>
@@ -39,125 +41,65 @@
 
 #include <stdio.h>
 
-#include <boost/test/unit_test.hpp>
+#include <boost/filesystem.hpp>
 
-#include <pdal/FileUtils.hpp>
-#include <pdal/PointBuffer.hpp>
-#include <pdal/StageIterator.hpp>
+#include <pdal/util/FileUtils.hpp>
 #include <pdal/Options.hpp>
-#include <pdal/PointBuffer.hpp>
 #include <pdal/Stage.hpp>
 #include "TestConfig.hpp"
 
-#ifdef PDAL_COMPILER_GCC
-#pragma GCC diagnostic ignored "-Wfloat-equal"
-//#pragma GCC diagnostic ignored "-Wsign-compare"
-#endif
+using namespace pdal;
+using namespace std;
 
-
-std::string Support::datapath()
+string Support::datapath()
 {
-    const std::string s = TestConfig::g_data_path;
-    return s;
-}
-
-bool Support::compare_stage_data(pdal::Stage const& a, pdal::Stage const& b)
-{
-    pdal::Schema const& a_schema = a.getSchema();
-    pdal::Schema const& b_schema = b.getSchema();
-    if (a_schema != b_schema) return false;
-
-    boost::uint64_t a_num_points64 = a.getNumPoints();
-    boost::uint64_t b_num_points64 = b.getNumPoints();
-    if (a_num_points64 > std::numeric_limits<boost::uint32_t>::max() ||
-            b_num_points64 > std::numeric_limits<boost::uint32_t>::max())
-        throw pdal::pdal_error("unable to do compare_stage_data for > 2^32 points");
-    boost::uint32_t a_num_points = static_cast<boost::uint32_t>(a_num_points64);
-    boost::uint32_t b_num_points = static_cast<boost::uint32_t>(b_num_points64);
-    if (a_num_points != b_num_points) return false;
-
-
-    // if we don't have any sizes here, we'll just use a small default
-    if (a_num_points == 0) a_num_points = 1024;
-    if (b_num_points == 0) b_num_points = 1024;
-
-    pdal::PointBuffer a_data(a_schema, a_num_points);
-    pdal::PointBuffer b_data(b_schema, b_num_points);
-
-    pdal::StageSequentialIterator* a_itr = a.createSequentialIterator(a_data);
-    pdal::StageSequentialIterator* b_itr = b.createSequentialIterator(b_data);
-
-    if (!a_itr) throw pdal::pdal_error("unable to create sequential iterator for compare_stage_data for stage a");
-    if (!b_itr) throw pdal::pdal_error("unable to create sequential iterator for compare_stage_data for stage b");
-
-
-
-    {
-        boost::uint32_t a_numRead = a_itr->read(a_data);
-        boost::uint32_t b_numRead = b_itr->read(b_data);
-        if (a_numRead != b_numRead) return false;
-
-        boost::uint8_t const* a_bytes = a_data.getData(0);
-        boost::uint8_t const* b_bytes = b_data.getData(0);
-
-        boost::uint64_t a_length = a_data.getBufferByteLength();
-        // boost::uint64_t b_length = b_data.getBufferByteLength();
-
-        for (boost::uintmax_t i=0; i<a_length; i++)
-        {
-            if (*a_bytes != *b_bytes)
-            {
-                return false;
-            }
-            ++a_bytes;
-            ++b_bytes;
-        }
-
-    }
-
-    return true;
-
+    return TestConfig::g_data_path;
 }
 
 std::string Support::datapath(const std::string& file)
 {
-    const std::string s = datapath() + file;
-    return s;
+    return datapath() + file;
 }
 
+string Support::configuredpath()
+{
+    return TestConfig::g_configured_path;
+}
+
+std::string Support::configuredpath(const std::string& file)
+{
+    return configuredpath() + file;
+}
 
 std::string Support::temppath()
 {
-    const std::string s = TestConfig::g_data_path + "../temp/";
-    return s;
+    return TestConfig::g_data_path + "../temp/";
 }
-
 
 std::string Support::temppath(const std::string& file)
 {
-    const std::string s = temppath() + file;
-    return s;
+    return temppath() + file;
 }
-
 
 std::string Support::binpath()
 {
-    const std::string argv0 = boost::unit_test::framework::master_test_suite().argv[0];
-    const std::string s = pdal::FileUtils::getDirectory(argv0);
-    return s;
-}
+    std::string binpath = TestConfig::g_binary_path;
 
+#ifdef PDAL_APP_BUNDLE
+    return binpath + "/pdal.app/Contents/MacOS/";
+#else
+    return binpath;
+#endif
+}
 
 std::string Support::binpath(const std::string& file)
 {
-    const std::string s = binpath() + file;
-    return s;
+    return binpath() + file;
 }
-
 
 std::string Support::exename(const std::string& name)
 {
-#ifdef PDAL_PLATFORM_WIN32
+#ifdef _WIN32
     return name + ".exe";
 #else
     return name;
@@ -166,25 +108,35 @@ std::string Support::exename(const std::string& name)
 
 
 // do a comparison by line of two (text) files, ignoring CRLF differences
-boost::uint32_t Support::diff_text_files(const std::string& file1, const std::string& file2, boost::int32_t ignoreLine1)
+uint32_t Support::diff_text_files(const std::string& file1,
+    const std::string& file2, int32_t ignoreLine1)
 {
     if (!pdal::FileUtils::fileExists(file1) ||
             !pdal::FileUtils::fileExists(file2))
-        return std::numeric_limits<boost::uint32_t>::max();
+        return (std::numeric_limits<uint32_t>::max)();
 
     std::istream* str1 = pdal::FileUtils::openFile(file1, false);
     std::istream* str2 = pdal::FileUtils::openFile(file2, false);
-    BOOST_CHECK(str1);
-    BOOST_CHECK(str2);
 
-    boost::uint32_t numdiffs = 0;
-    boost::int32_t currLine = 1;
-    while (!str1->eof() && !str2->eof())
+    int32_t diffs = diff_text_files(*str1, *str2, ignoreLine1);
+
+    pdal::FileUtils::closeFile(str1);
+    pdal::FileUtils::closeFile(str2);
+    return diffs;
+}
+
+uint32_t Support::diff_text_files(std::istream& str1, std::istream& str2,
+    int32_t ignoreLine1)
+{
+    uint32_t numdiffs = 0;
+    int32_t currLine = 1;
+
+    while (!str1.eof() && !str2.eof())
     {
         std::string buf1;
         std::string buf2;
-        std::getline(*str1, buf1);
-        std::getline(*str2, buf2);
+        std::getline(str1, buf1);
+        std::getline(str2, buf2);
 
         if (currLine == ignoreLine1)
         {
@@ -192,220 +144,183 @@ boost::uint32_t Support::diff_text_files(const std::string& file1, const std::st
             continue;
         }
 
-        if (str1->eof() && str2->eof())
+        if (str1.eof() && str2.eof())
         {
             // hit end on both together
             break;
         }
-        else if (str1->eof() && !str2->eof())
+        else if (str1.eof() && !str2.eof())
         {
             // str1 ended, but str2 still going
-            while (!str2->eof())
+            while (!str2.eof())
             {
-                std::getline(*str2, buf2);
+                std::getline(str2, buf2);
                 ++numdiffs;
             }
             break;
         }
-        else if (!str1->eof() && str2->eof())
+        else if (!str1.eof() && str2.eof())
         {
             // str2 ended, but str1 still going
-            while (!str1->eof())
+            while (!str1.eof())
             {
-                std::getline(*str1, buf1);
+                std::getline(str1, buf1);
                 ++numdiffs;
             }
             break;
         }
 
         if (buf1 != buf2)
-        {
             ++numdiffs;
-        }
 
         ++currLine;
     }
 
-    assert(str1->eof());
-    assert(str2->eof());
-
-    pdal::FileUtils::closeFile(str1);
-    pdal::FileUtils::closeFile(str2);
+    assert(str1.eof());
+    assert(str2.eof());
 
     return numdiffs;
 }
 
 
-boost::uint32_t Support::diff_files(const std::string& file1, const std::string& file2,
-                                    boost::uint32_t ignorable_start, boost::uint32_t ignorable_length)
+uint32_t Support::diff_files(const std::string& file1,
+    const std::string& file2, uint32_t ignorable_start,
+    uint32_t ignorable_length)
 {
-    boost::uint32_t start[] = { ignorable_start };
-    boost::uint32_t len[] = { ignorable_length };
+    uint32_t start[] = { ignorable_start };
+    uint32_t len[] = { ignorable_length };
     return diff_files(file1, file2, start, len, 1);
 }
 
 
 // do a byte-wise comparison of two (binary) files
-boost::uint32_t Support::diff_files(const std::string& file1, const std::string& file2,
-                                    boost::uint32_t* ignorable_start, boost::uint32_t* ignorable_length, boost::uint32_t num_ignorables)
+uint32_t Support::diff_files(const std::string& file1,
+    const std::string& file2, uint32_t* ignorable_start,
+    uint32_t* ignorable_length, uint32_t num_ignorables)
 {
     if (!pdal::FileUtils::fileExists(file1) ||
             !pdal::FileUtils::fileExists(file2))
-        return std::numeric_limits<boost::uint32_t>::max();
-
-    boost::uintmax_t len1x = pdal::FileUtils::fileSize(file1);
-    boost::uintmax_t len2x = pdal::FileUtils::fileSize(file2);
-    const size_t len1 = (size_t)len1x; // BUG
-    const size_t len2 = (size_t)len2x;
+        return (std::numeric_limits<uint32_t>::max)();
 
     std::istream* str1 = pdal::FileUtils::openFile(file1);
     std::istream* str2 = pdal::FileUtils::openFile(file2);
-    BOOST_CHECK(str1);
-    BOOST_CHECK(str2);
 
-    char* buf1 = new char[len1];
-    char* buf2 = new char[len2];
+    return diff_files(*str1, *str2, ignorable_start, ignorable_length,
+        num_ignorables);
+}
 
-    str1->read(buf1,len1);
-    str2->read(buf2,len2);
 
-    pdal::FileUtils::closeFile(str1);
-    pdal::FileUtils::closeFile(str2);
+uint32_t Support::diff_files(std::istream& str1, std::istream& str2,
+    uint32_t* ignorable_start, uint32_t* ignorable_length,
+    uint32_t num_ignorables)
+{
+    uint32_t numdiffs = 0;
+    char p, q;
 
-    char* p = buf1;
-    char* q = buf2;
-
-    boost::uint32_t numdiffs = 0;
-    const size_t minlen = (len1 < len2) ? len1 : len2;
-    const size_t maxlen = (len1 > len2) ? len1 : len2;
-    for (size_t i=0; i<minlen; i++)
+    for (uint32_t i = 0; ; ++i)
     {
-        if (*p != *q)
+        str1.get(p);
+        str2.get(q);
+        if (!str1 || !str2)
         {
-            if (num_ignorables == 0)
-            {
-                ++numdiffs;
-            }
-            else
-            {
-                // only count the difference if we are NOT in an ignorable region
-                bool is_ignorable = false;
-                for (boost::uint32_t region=0; region<num_ignorables; region++)
-                {
-                    const boost::uint32_t start = ignorable_start[region];
-                    const boost::uint32_t end = start + ignorable_length[region];
-                    if (i >= start && i < end)
-                    {
-                        // we are in an ignorable region!
-                        is_ignorable = true;
-                        break;
-                    }
-                }
-                if (is_ignorable == false)
-                {
-                    ++numdiffs;
-                }
-            }
+            if (!str1 != !str2)
+                numdiffs++;
+            break;
         }
+        if (p == q)
+            continue;
 
-        ++p;
-        ++q;
+        if (num_ignorables == 0)
+            ++numdiffs;
+        else
+        {
+            // only count the difference if we are NOT in an ignorable
+            // region
+            bool is_ignorable = false;
+            for (uint32_t region = 0; region < num_ignorables; region++)
+            {
+                uint32_t start = ignorable_start[region];
+                uint32_t end = start + ignorable_length[region];
+                if (i >= start && i < end)
+                {
+                    // we are in an ignorable region!
+                    is_ignorable = true;
+                    break;
+                }
+            }
+            if (!is_ignorable)
+                ++numdiffs;
+        }
     }
-
-    if (minlen != maxlen)
-    {
-        numdiffs += (maxlen - minlen);
-    }
-
-    delete[] buf1;
-    delete[] buf2;
-
     return numdiffs;
 }
 
 
-boost::uint32_t Support::diff_files(const std::string& file1, const std::string& file2)
+uint32_t Support::diff_files(const std::string& file1,
+    const std::string& file2)
 {
     return diff_files(file1, file2, NULL, NULL, 0);
 }
 
+uint32_t Support::diff_files(std::istream& str1, std::istream& str2)
+{
+    return diff_files(str1, str2, NULL, NULL, 0);
+}
 
 bool Support::compare_files(const std::string& file1, const std::string& file2)
 {
-    const boost::uint32_t numdiffs = diff_files(file1, file2);
-    return (numdiffs == 0);
+    return diff_files(file1, file2) == 0;
 }
 
-
-bool Support::compare_text_files(const std::string& file1, const std::string& file2)
+bool Support::compare_text_files(const std::string& file1,
+    const std::string& file2)
 {
-    boost::uint32_t numdiffs = diff_text_files(file1, file2);
-    return (numdiffs == 0);
+    return diff_text_files(file1, file2) == 0;
 }
 
-void Support::check_pN(const pdal::PointBuffer& data,
-                       std::size_t index,
-                       double xref, double yref, double zref)
+bool Support::compare_text_files(std::istream& str1, std::istream& str2)
 {
-    const ::pdal::Schema& schema = data.getSchema();
+    return diff_text_files(str1, str2) == 0;
+}
 
-    pdal::Dimension const& dimX = schema.getDimension("X");
-    pdal::Dimension const& dimY = schema.getDimension("Y");
-    pdal::Dimension const& dimZ = schema.getDimension("Z");
+void Support::check_pN(const pdal::PointView& data, PointId index,
+    double xref, double yref, double zref)
+{
+    double x0 = data.getFieldAs<double>(Dimension::Id::X, index);
+    double y0 = data.getFieldAs<double>(Dimension::Id::Y, index);
+    double z0 = data.getFieldAs<double>(Dimension::Id::Z, index);
 
-    boost::int32_t x0raw = data.getField<boost::int32_t>(dimX, index);
-    boost::int32_t y0raw = data.getField<boost::int32_t>(dimY, index);
-    boost::int32_t z0raw = data.getField<boost::int32_t>(dimZ, index);
-
-    double x0 = dimX.applyScaling<boost::int32_t>(x0raw);
-    double y0 = dimY.applyScaling<boost::int32_t>(y0raw);
-    double z0 = dimZ.applyScaling<boost::int32_t>(z0raw);
-
-    BOOST_CHECK_CLOSE(x0, xref, 0.001);
-    BOOST_CHECK_CLOSE(y0, yref, 0.001);
-    BOOST_CHECK_CLOSE(z0, zref, 0.001);
+    EXPECT_FLOAT_EQ(x0, xref);
+    EXPECT_FLOAT_EQ(y0, yref);
+    EXPECT_FLOAT_EQ(z0, zref);
 }
 
 
-void Support::check_pN(const pdal::PointBuffer& data,
-                       std::size_t index,
-                       double xref, double yref, double zref,
-                       double tref,
-                       boost::uint16_t rref, boost::uint16_t gref, boost::uint16_t bref)
+void Support::check_pN(const PointView& data, PointId index,
+    double xref, double yref, double zref, double tref,
+    uint16_t rref, uint16_t gref, uint16_t bref)
 {
     check_pN(data, index, xref, yref, zref);
 
-    const ::pdal::Schema& schema = data.getSchema();
-
-
-    boost::optional<pdal::Dimension const&> dimTime = schema.getDimensionOptional("Time");
-
-    if (dimTime)
+    if (data.hasDim(Dimension::Id::GpsTime))
     {
-        double t0 = data.getField<double>(*dimTime, index);
-        BOOST_CHECK_EQUAL(t0, tref);
-
+        double t0 = data.getFieldAs<double>(Dimension::Id::GpsTime, index);
+        EXPECT_FLOAT_EQ(t0, tref);
     }
 
-    boost::optional<pdal::Dimension const&> dimRed = schema.getDimensionOptional("Red");
-    boost::optional<pdal::Dimension const&> dimGreen = schema.getDimensionOptional("Green");
-    boost::optional<pdal::Dimension const&> dimBlue = schema.getDimensionOptional("Blue");
-
-    if (dimRed)
+    if (data.hasDim(Dimension::Id::Red))
     {
-        boost::uint16_t r0 = data.getField<boost::uint16_t>(*dimRed, index);
-        boost::uint16_t g0 = data.getField<boost::uint16_t>(*dimGreen, index);
-        boost::uint16_t b0 = data.getField<boost::uint16_t>(*dimBlue, index);
-        BOOST_CHECK_EQUAL(r0, rref);
-        BOOST_CHECK_EQUAL(g0, gref);
-        BOOST_CHECK_EQUAL(b0, bref);
+        uint16_t r0 = data.getFieldAs<uint16_t>(Dimension::Id::Red, index);
+        uint16_t g0 = data.getFieldAs<uint16_t>(Dimension::Id::Green, index);
+        uint16_t b0 = data.getFieldAs<uint16_t>(Dimension::Id::Blue, index);
+        EXPECT_EQ(r0, rref);
+        EXPECT_EQ(g0, gref);
+        EXPECT_EQ(b0, bref);
     }
-
-    return;
 }
 
 
-void Support::check_p0_p1_p2(const pdal::PointBuffer& data)
+void Support::check_p0_p1_p2(const pdal::PointView& data)
 {
     Support::check_pN(data, 0, 637012.240000, 849028.310000, 431.660000);
     Support::check_pN(data, 1, 636896.330000, 849087.700000, 446.390000);
@@ -413,7 +328,7 @@ void Support::check_p0_p1_p2(const pdal::PointBuffer& data)
 }
 
 
-void Support::check_p100_p101_p102(const pdal::PointBuffer& data)
+void Support::check_p100_p101_p102(const pdal::PointView& data)
 {
     Support::check_pN(data, 0, 636661.060000, 849854.130000, 424.900000);
     Support::check_pN(data, 1, 636568.180000, 850179.490000, 441.800000);
@@ -421,7 +336,7 @@ void Support::check_p100_p101_p102(const pdal::PointBuffer& data)
 }
 
 
-void Support::check_p355_p356_p357(const pdal::PointBuffer& data)
+void Support::check_p355_p356_p357(const pdal::PointView& data)
 {
     Support::check_pN(data, 0, 636462.600000, 850566.110000, 432.610000);
     Support::check_pN(data, 1, 636356.140000, 850530.480000, 432.680000);
@@ -429,7 +344,7 @@ void Support::check_p355_p356_p357(const pdal::PointBuffer& data)
 }
 
 
-void Support::check_p710_p711_p712(const pdal::PointBuffer& data)
+void Support::check_p710_p711_p712(const pdal::PointView& data)
 {
     Support::check_pN(data, 0, 638720.670000, 850926.640000, 417.320000);
     Support::check_pN(data, 1, 638672.380000, 851081.660000, 420.670000);
@@ -437,13 +352,12 @@ void Support::check_p710_p711_p712(const pdal::PointBuffer& data)
 }
 
 
-void Support::compareBounds(const pdal::Bounds<double>& p, const pdal::Bounds<double>& q)
+void Support::compareBounds(const BOX3D& p, const BOX3D& q)
 {
-    BOOST_CHECK_CLOSE(p.getMinimum(0), q.getMinimum(0), 1);
-    BOOST_CHECK_CLOSE(p.getMinimum(1), q.getMinimum(1), 1);
-    BOOST_CHECK_CLOSE(p.getMinimum(2), q.getMinimum(2), 1);
-    BOOST_CHECK_CLOSE(p.getMaximum(0), q.getMaximum(0), 1);
-    BOOST_CHECK_CLOSE(p.getMaximum(1), q.getMaximum(1), 1);
-    BOOST_CHECK_CLOSE(p.getMaximum(2), q.getMaximum(2), 1);
+    EXPECT_FLOAT_EQ(p.minx, q.minx);
+    EXPECT_FLOAT_EQ(p.miny, q.miny);
+    EXPECT_FLOAT_EQ(p.minz, q.minz);
+    EXPECT_FLOAT_EQ(p.maxx, q.maxx);
+    EXPECT_FLOAT_EQ(p.maxy, q.maxy);
+    EXPECT_FLOAT_EQ(p.maxz, q.maxz);
 }
-
